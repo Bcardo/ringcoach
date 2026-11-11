@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "window": {
+    "start": "2025-01-01T00:00:00Z",
+    "end": "2025-01-08T00:00:00Z"
+  },
+  "metrics": {
+    "sleep": {
+      "status": "available",
+      "records": [{
+        "source_app": null,
+        "source_device_type": null,
+        "start": "2025-01-02T02:00:00Z",
+        "start_offset": "-05:00",
+        "end": "2025-01-02T03:00:00Z",
+        "end_offset": "-05:00",
+        "stages": [{"start": "2025-01-02T02:00:00Z", "end": "2025-01-02T03:00:00Z", "stage": "deep"}]
+      }]
+    },
+    "heart_rate": {
+      "status": "available",
+      "records": [{
+        "source_app": null,
+        "source_device_type": null,
+        "start": "2025-01-02T02:00:00Z",
+        "start_offset": "-05:00",
+        "end": "2025-01-02T03:00:00Z",
+        "end_offset": null,
+        "samples": [{"time": "2025-01-02T02:01:00Z", "beats_per_minute": 62}]
+      }]
+    },
+    "hrv_rmssd": {
+      "status": "empty",
+      "records": []
+    },
+    "skin_temperature": {
+      "status": "available",
+      "records": [{
+        "source_app": null,
+        "source_device_type": null,
+        "start": "2025-01-02T02:00:00Z",
+        "start_offset": null,
+        "end": "2025-01-02T03:00:00Z",
+        "end_offset": null,
+        "baseline_celsius": null,
+        "deltas": [{"time": "2025-01-02T02:01:00Z", "delta_celsius": -0.4}]
+      }]
+    }
+  }
+}

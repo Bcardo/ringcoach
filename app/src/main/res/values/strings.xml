@@ -1,5 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">RingCoach</string>
-    <string name="prototype_ready">原型已启动</string>
+    <string name="probe_window">检查 Health Connect 中最近 %1$d 天的数据。</string>
+    <string name="probe_versions">Android %1$s · Samsung Health %2$s</string>
+    <string name="version_unknown">未安装或版本未知</string>
+    <string name="request_permissions">授权读取</string>
+    <string name="read_health_records">检查数据</string>
+    <string name="reading_health_records">正在检查…</string>
+    <string name="health_connect_unavailable">此设备上的 Health Connect 不可用或需要更新。</string>
+    <string name="probe_error">无法访问 Health Connect，请重试。</string>
+    <string name="permissions_already_granted">所需权限已授权。</string>
+    <string name="permission_rationale">RingCoach 根据你的授权读取睡眠、心率、心率变异性和皮肤温度，用于检查数据或生成导出预览。只有在你选择保存后，应用才会将预览写入你指定的文件。</string>
+    <string name="status_available">有记录</string>
+    <string name="status_unsupported">此版本不支持</string>
+    <string name="status_no_permission">未授权读取</string>
+    <string name="status_empty">此时间段内无记录</string>
+    <string name="status_error">读取失败</string>
+    <string name="metric_sleep">睡眠</string>
+    <string name="metric_heart_rate">心率</string>
+    <string name="metric_hrv">心率变异性 (RMSSD)</string>
+    <string name="metric_skin_temperature">皮肤温度</string>
+    <string name="sleep_stages_count">睡眠阶段：%1$d</string>
+    <string name="heart_rate_samples_count">心率样本：%1$d</string>
+    <string name="temperature_deltas_count">温度变化样本：%1$d</string>
+    <string name="record_count">记录：%1$d</string>
+    <string name="coverage_range">%1$s 至 %2$s</string>
+    <string name="record_source">%1$s · %2$s · %3$d 条</string>
+    <string name="ring_device_type">戒指</string>
+    <string name="unknown_device">设备未标明</string>
+    <string name="device_description">%1$s（类型 %2$d）</string>
+    <string name="source_note">检查包含所有可读取的数据。来源设备信息可用时会一并显示。</string>
+    <string name="export_select_metrics">选择要导出的指标</string>
+    <string name="export_preparing">正在生成预览…</string>
+    <string name="export_preview">预览 JSON</string>
+    <string name="export_preview_help">下方为将保存的文件内容。请在文件选择器中选用手机本地存储。</string>
+    <string name="export_save">保存 JSON</string>
+    <string name="export_saved">JSON 已保存。</string>
+    <string name="export_no_records">所选指标在最近七天内没有可导出的记录。</string>
+    <string name="export_too_large">预览超过 1 MiB，请减少所选指标。</string>
+    <string name="export_preview_failed">无法生成预览，请重试。</string>
+    <string name="export_preview_expired">预览已失效，请重新生成预览后再保存。</string>
+    <string name="export_save_failed">无法保存 JSON，请重试。</string>
 </resources>
