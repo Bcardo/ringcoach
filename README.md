@@ -29,7 +29,7 @@ Use **导入设置 JSON** to load a local settings file, review the replacement,
 
 Personal adaptations belong in the ignored `private/` folder or another local location. Only generic prompt templates are packaged in the APK.
 
-The database upgrade supports earlier schemas through version 7. On-device tests verify that settings edits preserve journal entries, stored custom prompts and coach cards survive upgrades, seven-day context queries respect dates, and failed imports roll back all changes.
+The database upgrade supports earlier schemas through version 8. On-device tests verify that settings edits preserve journal entries, stored custom prompts and coach cards survive upgrades, seven-day context queries respect dates, and failed imports roll back all changes.
 
 The debug build and Android unit tests passed, along with 14 on-device database and credential tests. The Settings screen, local import flow, and read-only Training tab were verified on the Fold7's outer display.
 
@@ -60,6 +60,18 @@ The nutrition request contains only the dated diet and other notes. Directly rep
 Editing diet or other notes invalidates the prior extraction. Late responses cannot overwrite newer input, and training-only edits preserve parsed nutrition. Failures preserve the raw text and offer retry. Imported references remain visible for days without new nutrition input; current pending or failed inputs do not silently reuse an old imported total. Coach context includes current nutrition values, evidence, coverage, and extraction status.
 
 The debug build, 20 JVM tests, and 17 isolated on-device database/credential/history tests passed. An opt-in synthetic live Qwen test verified estimated breakfast intake, reported weight/expenditure, partial-day coverage, exclusion of tomorrow's plan, and SQLite persistence. The seven-day reference table was visually checked on the Fold7. Photo-assisted logging with portion/sauce notes is tracked separately in [issue #21](https://github.com/Bcardo/ringcoach/issues/21).
+
+## Unified journal and meal logging
+
+Use **今日 → 记录今天** (or **继续记录今天**) for training, optional daily nutrition totals, other notes, and individual meals in one journal. **追加一餐（文字）** creates a text meal; **拍照** or **选择照片** creates a photo meal. Add portion, sauce/oil, preparation, shared-dish, and leftover details, then confirm the meal was consumed. **保存并分析全部** saves the journal and selected meal edits atomically before analysis, processes unanalysed/changed confirmed meals, and retains inputs if a request fails. Completed unchanged meals are not submitted again.
+
+For later food, return to the same journal and append another meal, then submit again. Open an existing meal to correct it; reanalysis replaces that meal's estimate. Corrections retain prior note/result revisions in SQLite. Deleting a meal removes its local image and revision history and updates current totals. The **训练** tab shows today's saved food consumption and summary alongside exercise progress.
+
+Explicit full-day totals override meal subtotals. Ambiguous overlapping free text is not added to meals automatically; the journal and nutrition view offer a choice to treat the text as including the meals or as separate food. If a full-day total is already present, update/clear it when recording further intake, or keep complete individual meal records instead. Aggregates preserve missing fields and remain partial-day intake unless a full-day total is explicitly reported.
+
+Photos are reencoded as JPEG with a maximum dimension of 1280 pixels and capped at 700,000 bytes; originals/EXIF metadata are not copied into meal storage. A private FileProvider supports the camera output, and the system photo picker supplies selected images. The reviewed photo (if any) and meal notes go to the saved Qianwen endpoint only upon submission. [Qwen3.8-Flash supports image input and structured output](https://platform.qianwenai.com/docs/models/qwen3-8-flash); requests use the documented [Base64 image message format](https://platform.qianwenai.com/docs/developer-guides/multimodal/vision). Images are stored in the private SQLite database and are excluded from coaching payloads, repository files, and logs. Coach context receives meal estimates, provenance, status, and locally reconciled totals.
+
+Validation includes unit tests for reconciliation/unknown values and isolated phone tests for schema-8 upgrade, source revisions, append/correction/deletion, image preparation, and atomic submission rollback. Two live requests with a synthetic meal drawing verified image support and portion/sauce correction without duplicating meals. The owner also selected a food photo and generated a saved estimate on the phone. These checks establish workflow behavior, not nutritional accuracy of image estimates.
 
 ## In-app coach cards
 

@@ -26,7 +26,8 @@ internal fun nutritionNumber(value: Double?): String = value?.let {
 } ?: "—"
 
 @Composable
-internal fun NutritionScreen(nutrition: NutritionViewModel, today: LocalDate) {
+internal fun NutritionScreen(nutrition: NutritionViewModel, today: LocalDate, onPhotos: () -> Unit) {
+    OutlinedButton(onClick = onPhotos) { Text(stringResource(R.string.photo_title)) }
     Text(stringResource(R.string.nutrition_help))
     if (nutrition.syncing) Text(stringResource(R.string.nutrition_syncing))
     if (nutrition.needsKey) Text(stringResource(R.string.nutrition_key_needed))
@@ -74,6 +75,12 @@ internal fun NutritionScreen(nutrition: NutritionViewModel, today: LocalDate) {
     for (day in nutrition.days) {
         HorizontalDivider()
         Text(day.date.toString(), style = MaterialTheme.typography.titleMedium)
+        if (day.photoMeals.isNotEmpty()) {
+            Text(stringResource(R.string.photo_day_count, day.photoMeals.size))
+            if (day.result?.coverage == "daily_total") Text(stringResource(R.string.photo_daily_total_priority))
+            MealOverlapControls(day, nutrition, today)
+            if (day.photoMeals.any { it.consumed && it.status != "complete" }) Text(stringResource(R.string.photo_incomplete_day))
+        }
         Text(stringResource(when (day.status) {
             "reference" -> R.string.nutrition_reference
             "pending" -> R.string.nutrition_pending
@@ -107,5 +114,22 @@ internal fun NutritionScreen(nutrition: NutritionViewModel, today: LocalDate) {
                 result.unresolved.forEach { Text(it) }
             }
         }
+    }
+}
+
+@Composable
+internal fun MealOverlapControls(day: NutritionDay, nutrition: NutritionViewModel, today: LocalDate) {
+    if (!day.photoConflict && day.photoMode == null) return
+    Text(stringResource(R.string.photo_overlap_help))
+    Text(stringResource(when (day.photoMode) {
+        "included" -> R.string.photo_mode_included
+        "separate" -> R.string.photo_mode_separate
+        else -> R.string.photo_mode_unknown
+    }))
+    OutlinedButton(enabled = !nutrition.syncing, onClick = { nutrition.reconcile(day.date, "included", today) }) {
+        Text(stringResource(R.string.photo_included))
+    }
+    OutlinedButton(enabled = !nutrition.syncing, onClick = { nutrition.reconcile(day.date, "separate", today) }) {
+        Text(stringResource(R.string.photo_separate))
     }
 }

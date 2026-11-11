@@ -32,7 +32,7 @@ internal data class CoachingSettings(
 }
 
 internal class JournalStore(context: Context, name: String = "ringcoach.db") :
-    SQLiteOpenHelper(context.applicationContext, name, null, 8) {
+    SQLiteOpenHelper(context.applicationContext, name, null, 9) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createJournalTable(db)
@@ -41,6 +41,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         createCoachTable(db)
         createWorkoutTables(db)
         createNutritionTable(db)
+        PhotoMealStore.createTables(db)
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -151,7 +152,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        check(oldVersion in 1..7 && newVersion == 8) { "Unsupported database migration" }
+        check(oldVersion in 1..8 && newVersion == 9) { "Unsupported database migration" }
         // SQLiteOpenHelper runs the migration in a transaction.
         if (oldVersion == 1) {
             db.execSQL("ALTER TABLE journal_entries RENAME TO journal_entries_v1")
@@ -192,12 +193,15 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                 )
             """.trimIndent())
         }
+        if (oldVersion < 8) {
         createNutritionTable(db)
         db.execSQL("""
             INSERT INTO nutrition_extractions (date, source_revision, source_diet, source_additional, status)
             SELECT date, updated_at, diet, additional, 'pending' FROM journal_entries
             WHERE TRIM(diet) != '' OR TRIM(additional) != ''
         """.trimIndent())
+        }
+        PhotoMealStore.createTables(db)
     }
 
     @Synchronized
@@ -231,7 +235,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     @Synchronized
     fun save(draft: JournalDraft): JournalEntry {
         val clean = draft.trimmed()
-        require(clean.hasContent) { "Journal entry is empty" }
+        require(clean.hasContent || PhotoMealStore(readableDatabase).list(clean.date, clean.date).isNotEmpty()) { "Journal entry is empty" }
         val updated = Instant.now()
         val db = writableDatabase
         db.beginTransaction()
@@ -266,6 +270,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                 """.trimIndent(), arrayOf(clean.date.toString(), revision, if (clean.training.isBlank()) "complete" else "pending"))
             }
             if (previous?.get(2) != clean.diet || previous?.get(3) != clean.additional) {
+                db.delete("nutrition_reconciliation", "date = ?", arrayOf(clean.date.toString()))
                 if (clean.diet.isBlank() && clean.additional.isBlank()) {
                     db.delete("nutrition_extractions", "date = ?", arrayOf(clean.date.toString()))
                 } else {
@@ -282,6 +287,22 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         } finally {
             db.endTransaction()
         }
+    }
+
+    @Synchronized
+    fun saveDailySubmission(draft: JournalDraft, mealId: String?, notes: String, consumed: Boolean): JournalEntry {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            if (mealId != null) {
+                val meals = PhotoMealStore(db)
+                require(meals.get(mealId)?.date == draft.date)
+                meals.edit(mealId, notes, consumed)
+            }
+            val saved = save(draft)
+            db.setTransactionSuccessful()
+            return saved
+        } finally { db.endTransaction() }
     }
 
     @Synchronized
@@ -452,10 +473,13 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                 }
             }
         }
+        val photos = PhotoMealStore(readableDatabase)
+        val meals = photos.list(date.minusDays(6), date).groupBy { it.date }
         return (0L..6L).map { offset ->
             val day = date.minusDays(offset)
-            parsed[day] ?: references.firstOrNull { it.date == day }?.let { NutritionDay(day, "reference", reference = it) }
+            val base = parsed[day] ?: references.firstOrNull { it.date == day }?.let { NutritionDay(day, "reference", reference = it) }
                 ?: NutritionDay(day, "missing")
+            MealNutrition.merge(base, meals[day] ?: emptyList(), photos.mode(day))
         }
     }
 

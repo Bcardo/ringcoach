@@ -247,6 +247,9 @@ class JournalStoreTest {
     }
 
     private fun removeExerciseNumbers() {
+        store.writableDatabase.execSQL("DROP TABLE meal_revisions")
+        store.writableDatabase.execSQL("DROP TABLE photo_meals")
+        store.writableDatabase.execSQL("DROP TABLE nutrition_reconciliation")
         store.writableDatabase.execSQL("DROP TABLE IF EXISTS nutrition_extractions")
         val exists = store.writableDatabase.rawQuery(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'exercise_baselines'", null,

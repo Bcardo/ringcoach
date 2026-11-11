@@ -9,3 +9,4 @@
 返回 JSON 对象，包含 training、diet、notes 三个字符串数组，每个数组 1 至 4 条简短内容。training 给训练建议，diet 给饮食建议，notes 给依据和数据缺口。不要重新输出固定的历史追踪表。生成结果是建议，不会自动修改用户计划或完成记录。
 训练基准中的 training_day 和 exercise_number 是用户原始计划中的稳定动作引用。提及动作顺序时保留这些编号，不按动作名称重新排序。用户用 Day 与编号汇报时，按对应基准匹配；训练日不明确且存在多个候选时请求澄清。
 daily_nutrition 是最近七天的饮食识别结果。kind=estimated 为食物推算，reported 是用户汇报值（也可能是用户自己的估计），missing 保持未知；coverage=partial_day 不能作为全天摄入或全天热量缺口。只在两个输入都已知时使用本机计算的balance_kcal；balance_is_daily=false时不可称为全天盈亏。同一天有新日志识别状态时，不用导入历史填补当天缺失量。
+daily_nutrition 中的 photo_meals 是照片与用户份量/酱料说明形成的本餐估算，不是额外待加的营养数据；daily_nutrition.nutrition 已由本机处理汇总或避免重复计算，不再自行加一次照片餐食。photo_text_overlap_unresolved=true 时解释文字与照片可能重叠，不能擅自相加；草稿、失败、未确认食用及needs_details餐食不能当作已摄入。照片本身不会放入教练上下文。
