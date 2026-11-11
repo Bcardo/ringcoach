@@ -10,6 +10,7 @@ The Chinese app has five tabs.
 - **训练** displays a read-only progress table grouped by training day. Daily training input updates the latest completed performance automatically.
 - **日志** automatically uses today's date and provides separate **训练**, **饮食**, and **其他记录** fields. Home refreshes the current date when the app resumes.
 - **历史** lists saved days in descending date order. Tap **查看与编辑** to reopen one.
+- Within **历史**, **教练卡历史** lists saved recommendations separately, newest first. Multiple generations on the same day remain separate. Open a card to read its original advice, model/prompt version, and archived input snapshot without another model request. The list loads 20 summaries at a time; full inputs load only when opening a card.
 - **教练** prepares a reviewed context and generates a saved Qwen coaching card.
 
 The **数据** button on Home opens Health Connect permissions, coverage, preview, and JSON export.

@@ -42,13 +42,17 @@ internal fun JournalApp(
     settings: SettingsViewModel,
     coach: CoachViewModel,
     workouts: WorkoutViewModel,
+    coachHistory: CoachHistoryViewModel,
     today: LocalDate,
     probe: HealthConnectProbe?,
     probeContent: @Composable () -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf("home") }
     var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
-    LaunchedEffect(tab, today) { workouts.sync(today) }
+    LaunchedEffect(tab, today) {
+        if (tab !in setOf("history", "coach_history")) workouts.sync(today)
+    }
+    LaunchedEffect(tab) { if (tab == "coach_history") coachHistory.reload() }
     LaunchedEffect(today, journal.loading) {
         if (!journal.loading && lastToday != today.toString()) {
             val previousDay = LocalDate.parse(lastToday)
@@ -61,7 +65,7 @@ internal fun JournalApp(
     fun openDay(date: LocalDate) {
         if (journal.openDay(date)) tab = "journal"
     }
-    BackHandler(enabled = tab != "home") { tab = "home" }
+    BackHandler(enabled = tab != "home") { tab = if (tab == "coach_history") "history" else "home" }
     MaterialTheme(colorScheme = colors) {
         Scaffold(
             bottomBar = {
@@ -73,7 +77,7 @@ internal fun JournalApp(
                         "history" to R.string.nav_history,
                     )) {
                         NavigationBarItem(
-                            selected = tab == destination,
+                            selected = tab == destination || (destination == "history" && tab == "coach_history"),
                             onClick = {
                                 if (destination == "journal") openDay(today) else tab = destination
                             },
@@ -83,7 +87,9 @@ internal fun JournalApp(
                 }
             },
         ) { padding ->
-            if (tab == "history") {
+            if (tab == "coach_history") {
+                CoachHistoryScreen(coachHistory, Modifier.padding(padding)) { tab = "history" }
+            } else if (tab == "history") {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -92,6 +98,11 @@ internal fun JournalApp(
                         modifier = Modifier.padding(top = 24.dp),
                         style = MaterialTheme.typography.headlineLarge) }
                     item { JournalLoadState(journal) }
+                    item {
+                        OutlinedButton(onClick = { tab = "coach_history" }) {
+                            Text(stringResource(R.string.coach_history_title))
+                        }
+                    }
                     if (enabled && journal.entries.isEmpty()) {
                         item { Text(stringResource(R.string.journal_history_empty)) }
                     }

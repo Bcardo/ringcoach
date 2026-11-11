@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="coach_history_title">教练卡历史</string>
+    <string name="coach_history_journals">返回日志历史</string>
+    <string name="coach_history_help">查看本机保存的每次建议。同一天生成的多张教练卡会分别保留，浏览不调用千问。</string>
+    <string name="coach_history_empty">还没有保存的教练卡。可到教练页生成第一张。</string>
+    <string name="coach_history_load_failed">无法读取教练卡历史，请重试。</string>
+    <string name="coach_history_missing">这张教练卡已不存在，请返回历史列表。</string>
+    <string name="coach_history_detail_failed">无法打开教练卡，请重试。</string>
+    <string name="coach_history_open">查看已保存建议</string>
+    <string name="coach_history_more">加载更多</string>
+    <string name="coach_history_archived">这是当时保存的建议，未根据后续日志或健康数据更新。</string>
+    <string name="coach_history_show_input">查看当时的输入</string>
+    <string name="coach_history_hide_input">收起当时的输入</string>
+    <string name="coach_history_input_help">以下为生成这张卡时保存的原始输入快照。</string>
     <string name="app_name">RingCoach</string>
     <string name="nav_home">今日</string>
     <string name="nav_journal">日志</string>

@@ -12,3 +12,11 @@ internal data class SavedCoachCard(
     val contextJson: String,
     val advice: CoachAdvice,
 )
+
+internal data class CoachCardSummary(
+    val id: String,
+    val date: LocalDate,
+    val createdAt: Instant,
+    val model: String,
+    val promptVersion: String,
+)
