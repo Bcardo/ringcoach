@@ -52,10 +52,13 @@ class AnalyzeTelemetryTest(unittest.TestCase):
                 subprocess.CompletedProcess([], 0, "codex-cli 0.167.1\n", ""),
                 subprocess.CompletedProcess([], 0, events, ""),
             ]) as run:
-                version, response = telemetry.analyze(facts, "codex", "gpt-5.4-mini", "fake-test-key")
+                version, response = telemetry.analyze(
+                    facts, "codex", "gpt-5.4-mini", "fake-test-key", prompt="Custom Codex instructions"
+                )
         self.assertEqual(version, "codex-cli 0.167.1")
         self.assertEqual(response, answer)
         invocation = run.call_args
+        self.assertTrue(invocation.kwargs["input"].startswith("Custom Codex instructions\n"))
         self.assertIn("--ephemeral", invocation.args[0])
         self.assertIn("shell_tool", invocation.args[0])
         self.assertNotEqual(Path(invocation.kwargs["cwd"]), FIXTURE.parent)
@@ -110,16 +113,28 @@ class AnalyzeTelemetryTest(unittest.TestCase):
             ("sk-sp-test", "token-plan.maas.qianwenaiapi.com"),
         ):
             with self.subTest(host=host), patch("analyze_telemetry.urlopen", return_value=response) as send:
-                self.assertEqual(telemetry.analyze_qwen(facts, "qwen3.8-flash", key), report)
+                self.assertEqual(telemetry.analyze_qwen(
+                    facts, "qwen3.8-flash", key, prompt="Custom Qwen instructions"
+                ), report)
                 request = send.call_args.args[0]
                 self.assertEqual(request.full_url, f"https://{host}/compatible-mode/v1/chat/completions")
                 self.assertEqual(request.unredirected_hdrs["Authorization"], f"Bearer {key}")
                 payload = json.loads(request.data)
                 self.assertEqual(payload["model"], "qwen3.8-flash")
+                self.assertEqual(payload["messages"][0]["content"], "Custom Qwen instructions")
                 self.assertEqual(json.loads(payload["messages"][1]["content"]), facts)
                 self.assertTrue(payload["response_format"]["json_schema"]["strict"])
                 self.assertNotIn(key.encode(), request.data)
                 self.assertNotIn(b"2025-01-02", request.data)
+
+    def test_prompt_file_accepts_windows_bom_and_rejects_empty_text(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = Path(work, "prompt.txt")
+            path.write_text("请简短概述。", encoding="utf-8-sig")
+            self.assertEqual(telemetry.load_prompt(path), "请简短概述。")
+            path.write_text("  \n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "empty"):
+                telemetry.load_prompt(path)
 
 
 if __name__ == "__main__":

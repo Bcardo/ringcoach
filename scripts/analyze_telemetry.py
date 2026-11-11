@@ -39,12 +39,14 @@ SCHEMA = {
     "required": list(RESPONSE_FIELDS),
     "additionalProperties": False,
 }
-PROMPT = """请用简体中文概述 RingCoach 的数据。仅使用下方的汇总事实，无需调用任何工具。
-observations 写 1 至 3 条简短观察。数值、单位和样本范围须与事实一致。
-limitations 写 1 至 2 条简短限制。不可推断诊断、疾病、恢复程度或训练建议。
-样本心率的最小值和平均值仅代表所含样本。会话长度不等于实际睡眠时长。
-不得用普通心率推算 HRV，也不得将温度差值当作绝对温度。不要为缺失数据补值。
-"""
+DEFAULT_PROMPT = Path(__file__).resolve().parents[1] / "prompts/telemetry-summary.txt"
+
+
+def load_prompt(path=DEFAULT_PROMPT):
+    prompt = path.read_text(encoding="utf-8-sig")
+    if not prompt.strip():
+        raise ValueError("The prompt file is empty.")
+    return prompt
 
 
 def timestamp(value):
@@ -254,7 +256,9 @@ def codex_diagnostic(result, api_key):
     return diagnostic[:2000]
 
 
-def analyze(facts, cli, model, api_key, *, diagnose=False):
+def analyze(facts, cli, model, api_key, *, diagnose=False, prompt=None):
+    if prompt is None:
+        prompt = load_prompt()
     with tempfile.TemporaryDirectory(prefix="ringcoach-analysis-") as work:
         schema = Path(work, "response-schema.json")
         schema.write_text(json.dumps(SCHEMA), encoding="utf-8")
@@ -270,7 +274,7 @@ def analyze(facts, cli, model, api_key, *, diagnose=False):
             "--disable", "shell_tool", "--disable", "unified_exec", "--disable", "plugins",
             "--disable", "multi_agent", "--disable", "multi_agent_v2", "--disable", "skill_search",
             "--json", "--output-schema", str(schema), "-",
-        ], input=PROMPT + "\n" + json.dumps(facts, ensure_ascii=False), **options)
+        ], input=prompt + "\n" + json.dumps(facts, ensure_ascii=False), **options)
         if result.returncode:
             message = codex_failure(result)
             if diagnose:
@@ -279,12 +283,14 @@ def analyze(facts, cli, model, api_key, *, diagnose=False):
         return version.stdout.strip(), read_codex_result(result.stdout)
 
 
-def analyze_qwen(facts, model, api_key):
+def analyze_qwen(facts, model, api_key, *, prompt=None):
+    if prompt is None:
+        prompt = load_prompt()
     host = "token-plan.maas.qianwenaiapi.com" if api_key.startswith("sk-sp-") else "maas.qianwenaiapi.com"
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": PROMPT},
+            {"role": "system", "content": prompt},
             {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
         ],
         "enable_thinking": False,
@@ -338,6 +344,7 @@ def main():
     parser.add_argument("--diagnose", action="store_true", help="Show redacted CLI error details using the bundled synthetic fixture.")
     parser.add_argument("--provider", choices=("codex", "qwen"), default="codex", help="Analysis provider.")
     parser.add_argument("--model", help="Override the provider's default model.")
+    parser.add_argument("--prompt-file", type=Path, default=DEFAULT_PROMPT, help="UTF-8 file with your analysis instructions.")
     parser.add_argument("--codex", default="codex", help="Codex executable name or absolute path.")
     args = parser.parse_args()
     try:
@@ -348,6 +355,7 @@ def main():
         if args.facts_only:
             print(json.dumps(facts, ensure_ascii=False, indent=2))
             return 0
+        prompt = load_prompt(args.prompt_file)
         model = args.model or ("qwen3.8-flash" if args.provider == "qwen" else "gpt-5.4-mini")
         if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", model):
             raise ValueError("The model name contains unsupported characters.")
@@ -355,7 +363,7 @@ def main():
             api_key = os.environ.get("DASHSCOPE_API_KEY", "").strip()
             if not api_key:
                 raise ValueError("Set DASHSCOPE_API_KEY in this shell before running Qwen analysis.")
-            print_report("Qianwen API", model, facts, analyze_qwen(facts, model, api_key))
+            print_report("Qianwen API", model, facts, analyze_qwen(facts, model, api_key, prompt=prompt))
             return 0
         api_key = os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not api_key or not api_key.strip():
@@ -363,7 +371,7 @@ def main():
         cli = shutil.which(args.codex)
         if cli is None:
             raise ValueError("Codex CLI was not found. Install it or pass its executable path with --codex.")
-        version, answer = analyze(facts, os.path.abspath(cli), model, api_key, diagnose=args.diagnose)
+        version, answer = analyze(facts, os.path.abspath(cli), model, api_key, diagnose=args.diagnose, prompt=prompt)
         print_report(version, model, facts, answer)
         return 0
     except (KeyError, TypeError, OverflowError, json.JSONDecodeError):
