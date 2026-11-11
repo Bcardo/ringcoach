@@ -2,6 +2,25 @@
 
 Native Android prototype for checking Health Connect coverage on the Galaxy Z Fold7, exporting a reviewed telemetry sample, and analyzing it on Windows.
 
+## Daily journal
+
+The Chinese app has four destinations.
+
+- **今日** opens today's saved journal or starts a new entry.
+- **日志** automatically uses today's date and provides separate **训练**, **饮食**, and **其他记录** fields. Home refreshes the current date when the app resumes.
+- **历史** lists saved days in descending date order. Tap **查看与编辑** to reopen one.
+- **数据** provides the existing Health Connect permissions, coverage, preview, and JSON export workflow.
+
+Journal entries save offline in the app-private SQLite database `ringcoach.db`, with one entry per date. Repeated saves update that day's entry. Existing days can be reopened from history, with a warning before replacing an unsaved draft. Draft fields survive screen navigation and activity recreation. Entries from the earlier layout migrate into **其他记录**, preserving the original notes, readiness, and discomfort text. The journal stores the text you enter for later use by the coaching feature.
+
+Database instrumentation tests use separate temporary databases. Build with `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest`, then install both APKs with `adb install -r` (add `-t` for the test APK) and run the following.
+
+```powershell
+adb shell am instrument -w -e class com.bcardo.ringcoach.JournalStoreTest com.bcardo.ringcoach.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Use the same debug signing key for app updates. The first attempt to run this task through Gradle's connected-device test runner failed on a signing-key mismatch, and its cleanup removed the debug app. The app was restored with the original user debug key. Three database tests passed through direct instrumentation, including migration from the earlier journal layout. The owner restored Health Connect read access, and the Data screen returned coverage again. Home, the three-field journal, empty history, and Data navigation were visually checked on the Fold7's outer display.
+
 ## Build on Windows
 
 1. Install JDK 17 or 21 and set `JAVA_HOME` to its installation directory.

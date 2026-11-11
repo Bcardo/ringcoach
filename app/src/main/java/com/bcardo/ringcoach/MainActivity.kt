@@ -55,10 +55,18 @@ import androidx.lifecycle.ViewModelProvider
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.ZoneId
+import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
 class MainActivity : ComponentActivity() {
+    private var today by mutableStateOf(LocalDate.now())
+
+    override fun onResume() {
+        super.onResume()
+        today = LocalDate.now()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -73,7 +81,8 @@ class MainActivity : ComponentActivity() {
             null
         }
         val export = ViewModelProvider(this)[ExportViewModel::class.java]
-        setContent { RingCoachScreen { ProbeScreen(probe, samsungHealthVersion, export) } }
+        val journal = ViewModelProvider(this)[JournalViewModel::class.java]
+        setContent { JournalApp(journal, today) { ProbeScreen(probe, samsungHealthVersion, export) } }
     }
 }
 

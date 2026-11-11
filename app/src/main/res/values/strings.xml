@@ -1,6 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">RingCoach</string>
+    <string name="nav_home">今日</string>
+    <string name="nav_journal">日志</string>
+    <string name="nav_history">历史</string>
+    <string name="nav_data">数据</string>
+    <string name="home_health_data">查看健康数据</string>
+    <string name="journal_today_empty">今天还没有日志。</string>
+    <string name="journal_history_empty">保存第一篇日志后，可在这里查看和编辑。</string>
+    <string name="journal_open_today">记录今天</string>
+    <string name="journal_loading">正在读取日志…</string>
+    <string name="journal_load_failed">无法读取本机日志，请重试。</string>
+    <string name="journal_retry">重试</string>
+    <string name="journal_editing_date">正在编辑 %1$s</string>
+    <string name="journal_training">训练</string>
+    <string name="journal_diet">饮食</string>
+    <string name="journal_additional">其他记录（选填）</string>
+    <string name="journal_training_value">训练：%1$s</string>
+    <string name="journal_diet_value">饮食：%1$s</string>
+    <string name="journal_additional_value">其他：%1$s</string>
+    <string name="journal_save">保存日志</string>
+    <string name="journal_saving">正在保存…</string>
+    <string name="journal_saved">日志已保存到本机。</string>
+    <string name="journal_save_failed">保存失败，输入内容已保留，请重试。</string>
+    <string name="journal_empty">请至少填写一项日志内容。</string>
+    <string name="journal_edit">查看与编辑</string>
+    <string name="journal_discard_title">放弃未保存的修改？</string>
+    <string name="journal_discard_message">打开另一天会替换当前输入的内容。</string>
+    <string name="journal_discard_confirm">放弃并打开</string>
     <string name="probe_window">检查 Health Connect 中最近 %1$d 天的数据。</string>
     <string name="probe_versions">Android %1$s · Samsung Health %2$s</string>
     <string name="version_unknown">未安装或版本未知</string>
