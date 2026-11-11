@@ -25,6 +25,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,6 +39,14 @@ import java.time.LocalDate
 @Composable
 internal fun JournalApp(journal: JournalViewModel, today: LocalDate, probeContent: @Composable () -> Unit) {
     var tab by rememberSaveable { mutableStateOf("home") }
+    var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
+    LaunchedEffect(today, journal.loading) {
+        if (!journal.loading && lastToday != today.toString()) {
+            val previousDay = LocalDate.parse(lastToday)
+            lastToday = today.toString()
+            if (journal.draft.date == previousDay) journal.openDay(today)
+        }
+    }
     val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
     val enabled = !journal.loading && !journal.saving && !journal.loadFailed
     fun openDay(date: LocalDate) {
