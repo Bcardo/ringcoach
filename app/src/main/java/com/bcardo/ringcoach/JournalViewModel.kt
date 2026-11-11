@@ -104,6 +104,12 @@ internal class JournalViewModel(application: Application, private val state: Sav
         pendingDay = null
     }
 
+    fun acceptSaved(entry: JournalEntry) {
+        entries = (entries.filterNot { it.draft.date == entry.draft.date } + entry).sortedByDescending { it.draft.date }
+        updateDraft(entry.draft)
+        notice = R.string.journal_saved
+    }
+
     fun save(onSaved: () -> Unit = {}) {
         if (loading || saving || loadFailed) return
         if (!draft.hasContent) {

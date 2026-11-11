@@ -65,6 +65,9 @@ class NutritionStoreTest {
             store.save(draft)
             val workout = store.nextPendingWorkout()
             store.writableDatabase.execSQL("DROP TABLE nutrition_extractions")
+            store.writableDatabase.execSQL("DROP TABLE meal_revisions")
+            store.writableDatabase.execSQL("DROP TABLE photo_meals")
+            store.writableDatabase.execSQL("DROP TABLE nutrition_reconciliation")
             store.writableDatabase.version = 7
             store.close()
             store = JournalStore(context, name)

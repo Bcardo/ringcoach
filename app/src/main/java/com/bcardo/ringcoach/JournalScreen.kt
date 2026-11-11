@@ -44,6 +44,7 @@ internal fun JournalApp(
     workouts: WorkoutViewModel,
     coachHistory: CoachHistoryViewModel,
     nutrition: NutritionViewModel,
+    photos: PhotoMealViewModel,
     today: LocalDate,
     probe: HealthConnectProbe?,
     probeContent: @Composable () -> Unit,
@@ -65,8 +66,9 @@ internal fun JournalApp(
         }
     }
     val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
-    val enabled = !journal.loading && !journal.saving && !journal.loadFailed
+    val enabled = !journal.loading && !journal.saving && !journal.loadFailed && !photos.working
     fun openDay(date: LocalDate) {
+        if (!enabled) return
         if (journal.openDay(date)) tab = "journal"
     }
     BackHandler(enabled = tab != "home") { tab = if (tab == "coach_history") "history" else "home" }
@@ -82,7 +84,7 @@ internal fun JournalApp(
                     )) {
                         NavigationBarItem(
                             selected = tab == destination || (destination == "history" && tab == "coach_history") ||
-                                (destination == "home" && tab == "nutrition"),
+                                (destination == "home" && tab in setOf("nutrition", "photos")),
                             onClick = {
                                 if (destination == "journal") openDay(today) else tab = destination
                             },
@@ -129,28 +131,44 @@ internal fun JournalApp(
                             "coach" -> R.string.nav_coach
                             "training" -> R.string.nav_training
                             "nutrition" -> R.string.nutrition_title
+                            "photos" -> R.string.photo_title
                             else -> R.string.app_name
                         }),
                         style = MaterialTheme.typography.headlineLarge,
                     )
                     when (tab) {
                         "data" -> probeContent()
-                        "training" -> WorkoutScreen(workouts, today)
-                        "nutrition" -> NutritionScreen(nutrition, today)
+                        "training" -> {
+                            TodayFoodSummary(nutrition.days.firstOrNull { it.date == today },
+                                journal.entries.firstOrNull { it.draft.date == today }?.draft?.diet ?: "") { openDay(today) }
+                            WorkoutScreen(workouts, today)
+                        }
+                        "nutrition" -> NutritionScreen(nutrition, today) { openDay(today) }
+                        "photos" -> {
+                            TextButton(onClick = { openDay(today) }) { Text(stringResource(R.string.journal_open_today)) }
+                        }
                         "settings" -> SettingsEditor(settings, coach, today)
                         "coach" -> CoachScreen(
                             coach,
-                            hasUnsavedInput = journal.hasChanges || settings.hasChanges,
+                            hasUnsavedInput = journal.hasChanges || settings.hasChanges || photos.hasChanges,
                             inputsReady = !journal.loading && !journal.loadFailed &&
-                                !settings.busy && !settings.loadFailed && !workouts.syncing && !nutrition.syncing,
+                                !settings.busy && !settings.loadFailed && !workouts.syncing && !nutrition.syncing && !photos.working,
                             onPrepare = { coach.prepare(today, probe) },
                             onSettings = { tab = "settings" },
                         )
                         "journal" -> {
                             JournalLoadState(journal)
-                            JournalEditor(journal, enabled) {
-                                workouts.sync(today, retryFailed = true)
-                                nutrition.sync(today, retryFailed = true)
+                            JournalEditor(journal, enabled, photos, today) {
+                                photos.submit(journal.draft, journal::acceptSaved) {
+                                    workouts.sync(today, retryFailed = true)
+                                    nutrition.sync(today, retryFailed = true)
+                                }
+                            }
+                            nutrition.days.firstOrNull { it.date == journal.draft.date }?.let {
+                                MealOverlapControls(it, nutrition, today)
+                                if (it.result?.coverage == "daily_total" && it.photoMeals.isNotEmpty()) {
+                                    Text(stringResource(R.string.daily_total_append_help))
+                                }
                             }
                         }
                         else -> {
@@ -161,15 +179,16 @@ internal fun JournalApp(
                             JournalLoadState(journal)
                             val entry = journal.entries.firstOrNull { it.draft.date == today }
                             if (entry == null && enabled) {
-                                Text(stringResource(R.string.journal_today_empty))
+                                Text(stringResource(if (nutrition.days.any { it.date == today && it.photoMeals.isNotEmpty() })
+                                    R.string.daily_existing_meals else R.string.journal_today_empty))
                             }
                             entry?.let { JournalEntryCard(it, enabled) { openDay(today) } }
-                            if (entry == null) {
+                            run {
                                 Button(
                                     enabled = enabled,
                                     onClick = { openDay(today) },
                                     modifier = Modifier.fillMaxWidth(),
-                                ) { Text(stringResource(R.string.journal_open_today)) }
+                                ) { Text(stringResource(if (entry == null) R.string.journal_open_today else R.string.daily_continue)) }
                             }
                             OutlinedButton(
                                 onClick = { tab = "data" },
@@ -216,7 +235,7 @@ private fun JournalLoadState(journal: JournalViewModel) {
 }
 
 @Composable
-private fun JournalEditor(journal: JournalViewModel, enabled: Boolean, onSaved: () -> Unit) {
+private fun JournalEditor(journal: JournalViewModel, enabled: Boolean, photos: PhotoMealViewModel, today: LocalDate, onSubmit: () -> Unit) {
     val draft = journal.draft
     Text(stringResource(R.string.journal_editing_date, draft.date.toString()),
         style = MaterialTheme.typography.bodySmall)
@@ -236,6 +255,7 @@ private fun JournalEditor(journal: JournalViewModel, enabled: Boolean, onSaved: 
         enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
     )
+    Text(stringResource(R.string.daily_diet_help), style = MaterialTheme.typography.bodySmall)
     OutlinedTextField(
         value = draft.additional,
         onValueChange = { journal.updateDraft(draft.copy(additional = it)) },
@@ -245,12 +265,19 @@ private fun JournalEditor(journal: JournalViewModel, enabled: Boolean, onSaved: 
         modifier = Modifier.fillMaxWidth(),
     )
     journal.notice?.let { Text(stringResource(it)) }
+    if (draft.date == today) {
+        Text(stringResource(R.string.daily_meals_title), style = MaterialTheme.typography.titleLarge)
+        PhotoMealScreen(photos, today, {}, {}, batch = true)
+    }
     Text(stringResource(R.string.workout_save_help), style = MaterialTheme.typography.bodySmall)
     Button(
-        onClick = { journal.save(onSaved) },
-        enabled = enabled && journal.hasChanges,
+        onClick = onSubmit,
+        enabled = enabled && (journal.hasChanges || photos.hasChanges ||
+            (journal.entries.none { it.draft.date == draft.date } && photos.meals.any { it.date == draft.date }) || photos.meals.any {
+            it.date == draft.date && it.consumed && it.status in setOf("draft", "failed", "pending") }),
         modifier = Modifier.fillMaxWidth(),
-    ) { Text(stringResource(if (journal.saving) R.string.journal_saving else R.string.journal_save)) }
+    ) { Text(stringResource(if (photos.working) R.string.journal_saving else R.string.daily_submit_all)) }
+    photos.notice?.let { Text(stringResource(it)) }
 }
 
 @Composable

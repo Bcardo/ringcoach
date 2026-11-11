@@ -37,12 +37,23 @@ internal data class NutritionDay(
     val status: String,
     val result: NutritionExtraction? = null,
     val reference: NutritionReference? = null,
+    val photoMeals: List<PhotoMeal> = emptyList(),
+    val photoConflict: Boolean = false,
+    val photoMode: String? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("date", date.toString()).put("status", status)
-        .put("source", if (reference != null) "user_import" else "saved_journal_input")
+        .put("source", when {
+            reference != null -> "user_import"
+            photoMeals.isNotEmpty() && result != null -> "journal_and_photo_meals"
+            status == "missing" -> "none"
+            else -> "saved_journal_input"
+        })
         .put("nutrition", result?.toJson() ?: JSONObject.NULL)
         .put("balance_kcal", result?.balance ?: JSONObject.NULL)
         .put("balance_is_daily", result?.coverage == "daily_total")
+        .put("photo_meals", JSONArray(photoMeals.map { it.toJson() }))
+        .put("photo_text_overlap_unresolved", photoConflict)
+        .put("photo_text_relation", photoMode ?: JSONObject.NULL)
 }
 
 internal object NutritionExtractor {

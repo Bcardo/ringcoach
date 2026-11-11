@@ -59,6 +59,19 @@ internal class NutritionViewModel(application: Application) : AndroidViewModel(a
         days = withContext(Dispatchers.IO) { store.readCoachingContext(date, "").nutritionDays }
     }
 
+    fun reconcile(day: LocalDate, mode: String, today: LocalDate) {
+        if (syncing) return
+        syncing = true
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) { PhotoMealStore(store.writableDatabase).reconcile(day, mode) }
+                refresh(today)
+            } catch (exception: CancellationException) { throw exception }
+            catch (_: Exception) { notice = R.string.nutrition_load_failed }
+            finally { syncing = false }
+        }
+    }
+
     private suspend fun processPending() {
         while (true) {
             val job = withContext(Dispatchers.IO) { store.nextPendingNutrition() } ?: return
