@@ -5,3 +5,9 @@ build/
 local.properties
 *.iml
 *.apk
+ringcoach-export*.json
+__pycache__/
+ringcoach-bugreport*.zip
+btsnoop_hci.log*
+*.pcap
+*.pcapng
