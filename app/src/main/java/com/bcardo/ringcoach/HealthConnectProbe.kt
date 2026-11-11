@@ -16,6 +16,7 @@ import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import kotlin.reflect.KClass
 
 internal const val SAMSUNG_HEALTH_PACKAGE = "com.sec.android.app.shealth"
@@ -162,6 +163,14 @@ internal class HealthConnectProbe(private val client: HealthConnectClient) {
         val results = metrics.filter { it.kind in selected }.map { it.read(client, granted, range, window) }
         if (results.none { it.exportRecords.isNotEmpty() }) return null
         return TelemetryExport.encode(window, results)
+    }
+
+    suspend fun coachingSnapshot(): JSONObject {
+        val window = recentWindow()
+        val range = TimeRangeFilter.between(window.start, window.end)
+        val granted = client.permissionController.getGrantedPermissions()
+        val results = metrics.map { it.read(client, granted, range, window) }
+        return CoachingTelemetry.summarize(window, results, ZoneId.systemDefault())
     }
 
     private fun recentWindow(): ExportWindow {

@@ -11,3 +11,4 @@ ringcoach-bugreport*.zip
 btsnoop_hci.log*
 *.pcap
 *.pcapng
+/private/

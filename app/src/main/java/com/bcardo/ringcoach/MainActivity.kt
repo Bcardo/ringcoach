@@ -82,7 +82,10 @@ class MainActivity : ComponentActivity() {
         }
         val export = ViewModelProvider(this)[ExportViewModel::class.java]
         val journal = ViewModelProvider(this)[JournalViewModel::class.java]
-        setContent { JournalApp(journal, today) { ProbeScreen(probe, samsungHealthVersion, export) } }
+        val settings = ViewModelProvider(this)[SettingsViewModel::class.java]
+        val coach = ViewModelProvider(this)[CoachViewModel::class.java]
+        val workouts = ViewModelProvider(this)[WorkoutViewModel::class.java]
+        setContent { JournalApp(journal, settings, coach, workouts, today, probe) { ProbeScreen(probe, samsungHealthVersion, export) } }
     }
 }
 

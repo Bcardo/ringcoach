@@ -104,7 +104,7 @@ internal class JournalViewModel(application: Application, private val state: Sav
         pendingDay = null
     }
 
-    fun save() {
+    fun save(onSaved: () -> Unit = {}) {
         if (loading || saving || loadFailed) return
         if (!draft.hasContent) {
             notice = R.string.journal_empty
@@ -120,6 +120,7 @@ internal class JournalViewModel(application: Application, private val state: Sav
                 saving = false
                 updateDraft(saved.draft)
                 notice = R.string.journal_saved
+                onSaved()
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: Exception) {

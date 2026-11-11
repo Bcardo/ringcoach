@@ -37,9 +37,18 @@ import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 
 @Composable
-internal fun JournalApp(journal: JournalViewModel, today: LocalDate, probeContent: @Composable () -> Unit) {
+internal fun JournalApp(
+    journal: JournalViewModel,
+    settings: SettingsViewModel,
+    coach: CoachViewModel,
+    workouts: WorkoutViewModel,
+    today: LocalDate,
+    probe: HealthConnectProbe?,
+    probeContent: @Composable () -> Unit,
+) {
     var tab by rememberSaveable { mutableStateOf("home") }
     var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
+    LaunchedEffect(tab, today) { workouts.sync(today) }
     LaunchedEffect(today, journal.loading) {
         if (!journal.loading && lastToday != today.toString()) {
             val previousDay = LocalDate.parse(lastToday)
@@ -58,8 +67,10 @@ internal fun JournalApp(journal: JournalViewModel, today: LocalDate, probeConten
             bottomBar = {
                 NavigationBar {
                     for ((destination, title) in listOf(
-                        "home" to R.string.nav_home, "journal" to R.string.nav_journal,
-                        "history" to R.string.nav_history, "data" to R.string.nav_data,
+                        "home" to R.string.nav_home, "training" to R.string.nav_training,
+                        "journal" to R.string.nav_journal,
+                        "coach" to R.string.nav_coach,
+                        "history" to R.string.nav_history,
                     )) {
                         NavigationBarItem(
                             selected = tab == destination,
@@ -98,15 +109,28 @@ internal fun JournalApp(journal: JournalViewModel, today: LocalDate, probeConten
                         stringResource(when (tab) {
                             "journal" -> R.string.nav_journal
                             "data" -> R.string.nav_data
+                            "settings" -> R.string.nav_settings
+                            "coach" -> R.string.nav_coach
+                            "training" -> R.string.nav_training
                             else -> R.string.app_name
                         }),
                         style = MaterialTheme.typography.headlineLarge,
                     )
                     when (tab) {
                         "data" -> probeContent()
+                        "training" -> WorkoutScreen(workouts, today)
+                        "settings" -> SettingsEditor(settings, coach, today)
+                        "coach" -> CoachScreen(
+                            coach,
+                            hasUnsavedInput = journal.hasChanges || settings.hasChanges,
+                            inputsReady = !journal.loading && !journal.loadFailed &&
+                                !settings.busy && !settings.loadFailed && !workouts.syncing,
+                            onPrepare = { coach.prepare(today, probe) },
+                            onSettings = { tab = "settings" },
+                        )
                         "journal" -> {
                             JournalLoadState(journal)
-                            JournalEditor(journal, enabled)
+                            JournalEditor(journal, enabled) { workouts.sync(today, retryFailed = true) }
                         }
                         else -> {
                             Text(today.toString(), style = MaterialTheme.typography.titleMedium)
@@ -127,6 +151,14 @@ internal fun JournalApp(journal: JournalViewModel, today: LocalDate, probeConten
                                 onClick = { tab = "data" },
                                 modifier = Modifier.fillMaxWidth(),
                             ) { Text(stringResource(R.string.home_health_data)) }
+                            Button(
+                                onClick = { tab = "coach" },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(stringResource(R.string.home_coach)) }
+                            TextButton(
+                                onClick = { tab = "settings" },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) { Text(stringResource(R.string.nav_settings)) }
                         }
                     }
                 }
@@ -160,7 +192,7 @@ private fun JournalLoadState(journal: JournalViewModel) {
 }
 
 @Composable
-private fun JournalEditor(journal: JournalViewModel, enabled: Boolean) {
+private fun JournalEditor(journal: JournalViewModel, enabled: Boolean, onSaved: () -> Unit) {
     val draft = journal.draft
     Text(stringResource(R.string.journal_editing_date, draft.date.toString()),
         style = MaterialTheme.typography.bodySmall)
@@ -189,8 +221,9 @@ private fun JournalEditor(journal: JournalViewModel, enabled: Boolean) {
         modifier = Modifier.fillMaxWidth(),
     )
     journal.notice?.let { Text(stringResource(it)) }
+    Text(stringResource(R.string.workout_save_help), style = MaterialTheme.typography.bodySmall)
     Button(
-        onClick = journal::save,
+        onClick = { journal.save(onSaved) },
         enabled = enabled && journal.hasChanges,
         modifier = Modifier.fillMaxWidth(),
     ) { Text(stringResource(if (journal.saving) R.string.journal_saving else R.string.journal_save)) }

@@ -21,6 +21,8 @@ android {
         compose = true
     }
 
+    sourceSets.getByName("main").assets.srcDir(rootProject.file("prompts"))
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
