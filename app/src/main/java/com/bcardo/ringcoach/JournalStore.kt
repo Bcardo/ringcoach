@@ -474,6 +474,41 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     @Synchronized
+    fun coachCardSummaries(before: CoachCardSummary? = null, limit: Int = 21): List<CoachCardSummary> {
+        require(limit in 1..100)
+        val selection = if (before == null) "" else
+            "WHERE created_at < ? OR (created_at = ? AND id < ?)"
+        val args = before?.let {
+            arrayOf(it.createdAt.toEpochMilli().toString(), it.createdAt.toEpochMilli().toString(), it.id)
+        }
+        return readableDatabase.rawQuery("""
+            SELECT id, date, created_at, model, prompt_version FROM coach_cards
+            $selection ORDER BY created_at DESC, id DESC LIMIT $limit
+        """.trimIndent(), args).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(CoachCardSummary(
+                    cursor.getString(0), LocalDate.parse(cursor.getString(1)),
+                    Instant.ofEpochMilli(cursor.getLong(2)), cursor.getString(3), cursor.getString(4),
+                ))
+            }
+        }
+    }
+
+    @Synchronized
+    fun coachCard(id: String): SavedCoachCard? {
+        return readableDatabase.rawQuery(
+            "SELECT id, date, created_at, model, prompt_version, context_json, advice_json FROM coach_cards WHERE id = ?",
+            arrayOf(id),
+        ).use { cursor ->
+            if (!cursor.moveToFirst()) return@use null
+            SavedCoachCard(
+                cursor.getString(0), LocalDate.parse(cursor.getString(1)), Instant.ofEpochMilli(cursor.getLong(2)),
+                cursor.getString(3), cursor.getString(4), cursor.getString(5), CoachAdvice.decode(cursor.getString(6)),
+            )
+        }
+    }
+
+    @Synchronized
     fun latestCoachCard(): SavedCoachCard? {
         return readableDatabase.rawQuery(
             "SELECT id, date, created_at, model, prompt_version, context_json, advice_json FROM coach_cards ORDER BY created_at DESC, id DESC LIMIT 1",
