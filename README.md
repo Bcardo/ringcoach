@@ -96,3 +96,13 @@ python .\scripts\analyze_telemetry.py .\app\src\test\resources\synthetic-telemet
 After the synthetic check passes, pass a reviewed export in place of the fixture. Clear the session variable with `Remove-Item Env:DASHSCOPE_API_KEY` when finished.
 
 The owner ran both the synthetic fixture and the reviewed Fold7 export successfully with `qwen3.8-flash`. The synthetic report matched the fixture's sample counts and heart rate, preserved the skin-temperature delta, and identified RMSSD as missing. The Fold7 report matched the locally computed sleep-session lengths, sleep-stage interval counts, and heart-rate statistics. It flagged RMSSD and skin temperature as missing from the export.
+
+### Customize the prompt
+
+Edit [prompts/telemetry-summary.txt](prompts/telemetry-summary.txt) to change the analysis instructions. Each run reads the file again. You can also use a personal UTF-8 file.
+
+```powershell
+python .\scripts\analyze_telemetry.py $export --provider qwen --prompt-file 'C:\private\my-ringcoach-prompt.txt'
+```
+
+The report uses `observations` and `limitations` string arrays, with 1–3 observations and 1–2 limitations. Keep those fields in your prompt. The [coaching policy](prompts/coaching-policy.md) contains editable defaults for the future coaching feature, including an RPE cap of 7.5. The [rule decisions and acceptance examples](docs/coaching-rules.md) describe how matching rules interact.
