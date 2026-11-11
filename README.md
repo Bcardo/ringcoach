@@ -4,14 +4,33 @@ Native Android prototype for checking Health Connect coverage on the Galaxy Z Fo
 
 ## Daily journal
 
-The Chinese app has four destinations.
+The Chinese app has five tabs.
 
 - **今日** opens today's saved journal or starts a new entry.
+- **训练** displays a read-only progress table grouped by training day. Daily training input updates the latest completed performance automatically.
 - **日志** automatically uses today's date and provides separate **训练**, **饮食**, and **其他记录** fields. Home refreshes the current date when the app resumes.
 - **历史** lists saved days in descending date order. Tap **查看与编辑** to reopen one.
-- **数据** provides the existing Health Connect permissions, coverage, preview, and JSON export workflow.
+- **教练** prepares a reviewed context and generates a saved Qwen coaching card.
+
+The **数据** button on Home opens Health Connect permissions, coverage, preview, and JSON export.
 
 Journal entries save offline in the app-private SQLite database `ringcoach.db`, with one entry per date. Repeated saves update that day's entry. Existing days can be reopened from history, with a warning before replacing an unsaved draft. Draft fields survive screen navigation and activity recreation. Entries from the earlier layout migrate into **其他记录**, preserving the original notes, readiness, and discomfort text. The journal stores the text you enter for later use by the coaching feature.
+
+## Routine, diet, and coaching settings
+
+From **今日**, tap **设置**. Enter a reusable **基础训练计划**, **基础饮食计划**, and **教练指令**, then tap **保存设置**. The initial coaching instructions come from [prompts/coaching-policy.md](prompts/coaching-policy.md), packaged with the app. You can edit the default RPE cap and other instructions in the field.
+
+Settings save offline in `ringcoach.db` and persist when the app restarts. Unsaved fields survive navigation and activity recreation. Opening and saving these fields makes no model request. Coach cards use these saved plans and instructions with the reviewed daily journal and available telemetry.
+
+Use **导入设置 JSON** to load a local settings file, review the replacement, and save it. Schema version 1 contains `routine`, `diet`, and `instructions` strings. Version 2 adds `snapshot_date`, `nutrition_history`, and `exercise_baselines`. Imports are limited to 128 KiB. Settings and reference records save in a single transaction. Repeating an import updates the same reference keys.
+
+**检查教练上下文** reads saved settings, seven calendar days of journal and nutrition history, and the latest applicable exercise-baseline snapshot from SQLite. The preview identifies imported nutrition as user-provided estimates and exercise baselines as references. It reports health telemetry as not loaded until the coaching request adds it. Coaching output can summarize the retrieved context without repeating fixed tracking tables.
+
+Personal adaptations belong in the ignored `private/` folder or another local location. Only generic prompt templates are packaged in the APK.
+
+The database upgrade supports earlier schemas through version 6. On-device tests verify that settings edits preserve journal entries, stored custom prompts and coach cards survive upgrades, seven-day context queries respect dates, and failed imports roll back all changes.
+
+The debug build and Android unit tests passed, along with 14 on-device database and credential tests. The Settings screen, local import flow, and read-only Training tab were verified on the Fold7's outer display.
 
 Database instrumentation tests use separate temporary databases. Build with `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest`, then install both APKs with `adb install -r` (add `-t` for the test APK) and run the following.
 
@@ -20,6 +39,22 @@ adb shell am instrument -w -e class com.bcardo.ringcoach.JournalStoreTest com.bc
 ```
 
 Use the same debug signing key for app updates. The first attempt to run this task through Gradle's connected-device test runner failed on a signing-key mismatch, and its cleanup removed the debug app. The app was restored with the original user debug key. Three database tests passed through direct instrumentation, including migration from the earlier journal layout. The owner restored Health Connect read access, and the Data screen returned coverage again. Home, the three-field journal, empty history, and Data navigation were visually checked on the Fold7's outer display.
+
+## Automatic training progress
+
+Exercises retain the source plan's order with a stable number within each training day, stored in SQLite and included in model context. For example, a daily entry can refer to `Day 1, exercise 2`. A number without an identifiable training day requires clarification. Upgrading an existing import recovers its original insertion order without reimporting personal data.
+
+Enter the completed workout in the daily **训练** field and save. The original text saves to SQLite first. With a saved Qianwen key, the app automatically sends the training text and known exercise names to Qwen3.8-Flash for extraction. It stores the recognized exercise, exact performance text, source evidence, and completion status in SQLite. The read-only **训练** tab displays each exercise's latest completed or partially completed performance and date. Exercises without a recognized completion show the imported reference, clearly labeled with its date.
+
+Future plans do not replace completed performance. Units, per-side loads, assistance, and rep notation stay as entered. Ambiguous passages remain visible for clarification in the journal. Editing training invalidates its old extraction; a late reply cannot replace a newer revision. Diet-only edits preserve recognized training. Pending work resumes when the app opens or changes tabs. Failed requests preserve the original text and provide a retry button; extraction requires a network connection and does not run as a background service while the app is closed.
+
+An opt-in live phone test used synthetic training to verify recognition, exclusion of tomorrow's planned weight, and persistence in a disposable database. No synthetic workout was added to the owner's journal.
+
+## In-app coach cards
+
+Save the Qianwen key under **设置**. Android Keystore-backed encryption protects it; the key is excluded from SQLite and settings imports. In **教练**, prepare and review the context before sending it. The request includes saved preferences, seven days of journal/nutrition history, reference baselines, latest recognized workout records, extraction statuses, and a fresh Health Connect summary. Missing HRV remains missing.
+
+Successful Chinese cards have training, diet, and evidence/data-gap sections. SQLite archives the response and reviewed input snapshot, and the latest card reloads after reopening the app. A live Qwen card was generated and its persistence verified on the Fold7.
 
 ## Build on Windows
 

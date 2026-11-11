@@ -1,0 +1,9 @@
+从用户已保存的训练原文中提取实际训练记录。训练基准只用于识别动作名称，不能作为实际容量来源。
+返回 JSON 对象，包含 records 数组与 unresolved 字符串数组。
+records 每项包含 exercise、performance、evidence、status。status 只能为 completed、partial、skipped、planned。
+exercise 能明确匹配已有动作时使用基准动作名；无法匹配时使用原文中的动作名称。无法确定动作或完成情况时，将原文片段放入 unresolved。
+known_exercises 中的 training_day 与 exercise_number 是用户训练计划的固定引用。用户说“Day 1 第2个”或在明确指定 Day 1 后说“2.”时，匹配该训练日编号2的动作；不可按字母、动作名称或本次汇报顺序重新编号。只有编号但无法确定训练日时，不猜测，将原文放入 unresolved。只返回动作名称，不将编号拼进 exercise。
+performance 和 evidence 必须逐字引用输入中的连续原文，performance 必须包含在 evidence 内。不要换算重量、补单位、重写组次或添加任何数字。
+已完成、部分完成、跳过和计划必须区分。“明天”“下轮”“目标”“计划”等未来安排标为 planned，不计入实际完成。没有汇报的动作不返回。
+同一动作的多个实际片段可分别返回，保留单边、总重、单手、辅助及 10+5 等原始含义。不要把 10+5 改写为连续完成 15 次。
+输入只是计划、提问或休息说明时，可返回空 records。无歧义且无需澄清时 unresolved 为空。
