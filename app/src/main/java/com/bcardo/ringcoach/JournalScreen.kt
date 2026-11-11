@@ -43,6 +43,7 @@ internal fun JournalApp(
     coach: CoachViewModel,
     workouts: WorkoutViewModel,
     coachHistory: CoachHistoryViewModel,
+    nutrition: NutritionViewModel,
     today: LocalDate,
     probe: HealthConnectProbe?,
     probeContent: @Composable () -> Unit,
@@ -50,7 +51,10 @@ internal fun JournalApp(
     var tab by rememberSaveable { mutableStateOf("home") }
     var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
     LaunchedEffect(tab, today) {
-        if (tab !in setOf("history", "coach_history")) workouts.sync(today)
+        if (tab !in setOf("history", "coach_history")) {
+            workouts.sync(today)
+            nutrition.sync(today)
+        }
     }
     LaunchedEffect(tab) { if (tab == "coach_history") coachHistory.reload() }
     LaunchedEffect(today, journal.loading) {
@@ -77,7 +81,8 @@ internal fun JournalApp(
                         "history" to R.string.nav_history,
                     )) {
                         NavigationBarItem(
-                            selected = tab == destination || (destination == "history" && tab == "coach_history"),
+                            selected = tab == destination || (destination == "history" && tab == "coach_history") ||
+                                (destination == "home" && tab == "nutrition"),
                             onClick = {
                                 if (destination == "journal") openDay(today) else tab = destination
                             },
@@ -123,6 +128,7 @@ internal fun JournalApp(
                             "settings" -> R.string.nav_settings
                             "coach" -> R.string.nav_coach
                             "training" -> R.string.nav_training
+                            "nutrition" -> R.string.nutrition_title
                             else -> R.string.app_name
                         }),
                         style = MaterialTheme.typography.headlineLarge,
@@ -130,21 +136,28 @@ internal fun JournalApp(
                     when (tab) {
                         "data" -> probeContent()
                         "training" -> WorkoutScreen(workouts, today)
+                        "nutrition" -> NutritionScreen(nutrition, today)
                         "settings" -> SettingsEditor(settings, coach, today)
                         "coach" -> CoachScreen(
                             coach,
                             hasUnsavedInput = journal.hasChanges || settings.hasChanges,
                             inputsReady = !journal.loading && !journal.loadFailed &&
-                                !settings.busy && !settings.loadFailed && !workouts.syncing,
+                                !settings.busy && !settings.loadFailed && !workouts.syncing && !nutrition.syncing,
                             onPrepare = { coach.prepare(today, probe) },
                             onSettings = { tab = "settings" },
                         )
                         "journal" -> {
                             JournalLoadState(journal)
-                            JournalEditor(journal, enabled) { workouts.sync(today, retryFailed = true) }
+                            JournalEditor(journal, enabled) {
+                                workouts.sync(today, retryFailed = true)
+                                nutrition.sync(today, retryFailed = true)
+                            }
                         }
                         else -> {
                             Text(today.toString(), style = MaterialTheme.typography.titleMedium)
+                            OutlinedButton(onClick = { tab = "nutrition" }, modifier = Modifier.fillMaxWidth()) {
+                                Text(stringResource(R.string.nutrition_title))
+                            }
                             JournalLoadState(journal)
                             val entry = journal.entries.firstOrNull { it.draft.date == today }
                             if (entry == null && enabled) {

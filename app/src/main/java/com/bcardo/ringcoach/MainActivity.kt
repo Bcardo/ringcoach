@@ -86,7 +86,8 @@ class MainActivity : ComponentActivity() {
         val coach = ViewModelProvider(this)[CoachViewModel::class.java]
         val workouts = ViewModelProvider(this)[WorkoutViewModel::class.java]
         val coachHistory = ViewModelProvider(this)[CoachHistoryViewModel::class.java]
-        setContent { JournalApp(journal, settings, coach, workouts, coachHistory, today, probe) { ProbeScreen(probe, samsungHealthVersion, export) } }
+        val nutrition = ViewModelProvider(this)[NutritionViewModel::class.java]
+        setContent { JournalApp(journal, settings, coach, workouts, coachHistory, nutrition, today, probe) { ProbeScreen(probe, samsungHealthVersion, export) } }
     }
 }
 

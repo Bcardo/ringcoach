@@ -32,7 +32,7 @@ internal data class CoachingSettings(
 }
 
 internal class JournalStore(context: Context, name: String = "ringcoach.db") :
-    SQLiteOpenHelper(context.applicationContext, name, null, 7) {
+    SQLiteOpenHelper(context.applicationContext, name, null, 8) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createJournalTable(db)
@@ -40,10 +40,24 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         createReferenceTables(db)
         createCoachTable(db)
         createWorkoutTables(db)
+        createNutritionTable(db)
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
         db.setForeignKeyConstraintsEnabled(true)
+    }
+
+    private fun createNutritionTable(db: SQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE nutrition_extractions (
+                date TEXT PRIMARY KEY NOT NULL REFERENCES journal_entries(date) ON DELETE CASCADE,
+                source_revision TEXT NOT NULL,
+                source_diet TEXT NOT NULL,
+                source_additional TEXT NOT NULL,
+                status TEXT NOT NULL,
+                result_json TEXT
+            )
+        """.trimIndent())
     }
 
     private fun createWorkoutTables(db: SQLiteDatabase) {
@@ -137,7 +151,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        check(oldVersion in 1..6 && newVersion == 7) { "Unsupported database migration" }
+        check(oldVersion in 1..7 && newVersion == 8) { "Unsupported database migration" }
         // SQLiteOpenHelper runs the migration in a transaction.
         if (oldVersion == 1) {
             db.execSQL("ALTER TABLE journal_entries RENAME TO journal_entries_v1")
@@ -167,7 +181,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             SELECT date, training_revision, 'pending' FROM journal_entries WHERE TRIM(training) != ''
         """.trimIndent())
         }
-        if (oldVersion >= 4) {
+        if (oldVersion in 4..6) {
             db.execSQL("ALTER TABLE exercise_baselines ADD COLUMN exercise_number INTEGER NOT NULL DEFAULT 1")
             // Earlier imports inserted rows in source-document order. Recover that order per day.
             db.execSQL("""
@@ -178,6 +192,12 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                 )
             """.trimIndent())
         }
+        createNutritionTable(db)
+        db.execSQL("""
+            INSERT INTO nutrition_extractions (date, source_revision, source_diet, source_additional, status)
+            SELECT date, updated_at, diet, additional, 'pending' FROM journal_entries
+            WHERE TRIM(diet) != '' OR TRIM(additional) != ''
+        """.trimIndent())
     }
 
     @Synchronized
@@ -217,13 +237,13 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         db.beginTransaction()
         try {
             val previous = db.rawQuery(
-                "SELECT training, training_revision FROM journal_entries WHERE date = ?",
+                "SELECT training, training_revision, diet, additional FROM journal_entries WHERE date = ?",
                 arrayOf(clean.date.toString()),
             ).use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) to cursor.getString(1) else null
+                if (cursor.moveToFirst()) (0..3).map { cursor.getString(it) } else null
             }
-            val changed = previous?.first != clean.training
-            val revision = if (changed) UUID.randomUUID().toString() else previous!!.second
+            val changed = previous?.get(0) != clean.training
+            val revision = if (changed) UUID.randomUUID().toString() else previous!![1]
             db.execSQL("""
             INSERT INTO journal_entries (date, training, diet, additional, created_at, updated_at, training_revision)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -244,6 +264,18 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                     ON CONFLICT(date) DO UPDATE SET source_revision = excluded.source_revision,
                         status = excluded.status, unresolved_json = '[]'
                 """.trimIndent(), arrayOf(clean.date.toString(), revision, if (clean.training.isBlank()) "complete" else "pending"))
+            }
+            if (previous?.get(2) != clean.diet || previous?.get(3) != clean.additional) {
+                if (clean.diet.isBlank() && clean.additional.isBlank()) {
+                    db.delete("nutrition_extractions", "date = ?", arrayOf(clean.date.toString()))
+                } else {
+                    db.execSQL("""
+                        INSERT INTO nutrition_extractions (date, source_revision, source_diet, source_additional, status)
+                        VALUES (?, ?, ?, ?, 'pending') ON CONFLICT(date) DO UPDATE SET
+                            source_revision = excluded.source_revision, source_diet = excluded.source_diet,
+                            source_additional = excluded.source_additional, status = 'pending', result_json = NULL
+                    """.trimIndent(), arrayOf(clean.date.toString(), UUID.randomUUID().toString(), clean.diet, clean.additional))
+                }
             }
             db.setTransactionSuccessful()
             return JournalEntry(clean, updated)
@@ -359,15 +391,71 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                     }
                 }
             }
+            val dailyNutrition = nutritionDays(date, nutrition)
             val context = CoachingContext(
                 date, readSettings(defaultInstructions),
                 readJournals("date BETWEEN ? AND ?", arrayOf(date.minusDays(6).toString(), date.toString())),
-                nutrition, exercises, latestWorkoutRecords(date), workoutStatuses(date.minusDays(6), date),
+                nutrition.filter { ref -> dailyNutrition.none { it.date == ref.date && it.status != "reference" } },
+                exercises, latestWorkoutRecords(date), workoutStatuses(date.minusDays(6), date), dailyNutrition,
             )
             db.setTransactionSuccessful()
             return context
         } finally {
             db.endTransaction()
+        }
+    }
+
+    @Synchronized
+    fun nextPendingNutrition(): PendingNutrition? {
+        return readableDatabase.rawQuery("""
+            SELECT date, source_revision, source_diet, source_additional FROM nutrition_extractions
+            WHERE status = 'pending' ORDER BY date LIMIT 1
+        """.trimIndent(), null).use {
+            if (!it.moveToFirst()) null else PendingNutrition(
+                LocalDate.parse(it.getString(0)), it.getString(1), it.getString(2), it.getString(3),
+            )
+        }
+    }
+
+    @Synchronized
+    fun applyNutritionExtraction(job: PendingNutrition, result: NutritionExtraction): Boolean {
+        val values = android.content.ContentValues().apply {
+            put("status", "complete")
+            put("result_json", result.toJson().toString())
+        }
+        return writableDatabase.update("nutrition_extractions", values,
+            "date = ? AND source_revision = ?", arrayOf(job.date.toString(), job.revision)) == 1
+    }
+
+    @Synchronized
+    fun failNutritionExtraction(job: PendingNutrition) {
+        writableDatabase.execSQL("UPDATE nutrition_extractions SET status = 'failed' WHERE date = ? AND source_revision = ?",
+            arrayOf(job.date.toString(), job.revision))
+    }
+
+    @Synchronized
+    fun retryFailedNutrition() {
+        writableDatabase.execSQL("UPDATE nutrition_extractions SET status = 'pending' WHERE status = 'failed'")
+    }
+
+    private fun nutritionDays(date: LocalDate, references: List<NutritionReference>): List<NutritionDay> {
+        val parsed = readableDatabase.rawQuery("""
+            SELECT date, status, result_json, source_diet, source_additional FROM nutrition_extractions
+            WHERE date BETWEEN ? AND ? ORDER BY date
+        """.trimIndent(), arrayOf(date.minusDays(6).toString(), date.toString())).use { cursor ->
+            buildMap {
+                while (cursor.moveToNext()) {
+                    val day = LocalDate.parse(cursor.getString(0))
+                    val result = if (cursor.isNull(2)) null else NutritionExtractor.decode(cursor.getString(2),
+                        nutritionSource(cursor.getString(3), cursor.getString(4)))
+                    put(day, NutritionDay(day, cursor.getString(1), result))
+                }
+            }
+        }
+        return (0L..6L).map { offset ->
+            val day = date.minusDays(offset)
+            parsed[day] ?: references.firstOrNull { it.date == day }?.let { NutritionDay(day, "reference", reference = it) }
+                ?: NutritionDay(day, "missing")
         }
     }
 

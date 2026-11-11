@@ -52,6 +52,7 @@ internal data class CoachingContext(
     val exercises: List<ExerciseBaseline>,
     val workoutRecords: List<WorkoutRecord> = emptyList(),
     val workoutStatuses: List<JSONObject> = emptyList(),
+    val nutritionDays: List<NutritionDay> = emptyList(),
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("request_date", date.toString())
@@ -71,5 +72,6 @@ internal data class CoachingContext(
         .put("exercise_baselines", JSONArray(exercises.map { it.toJson() }))
         .put("latest_workout_records", JSONArray(workoutRecords.map { it.toJson() }))
         .put("training_extraction_status", JSONArray(workoutStatuses))
+        .put("daily_nutrition", JSONArray(nutritionDays.map { it.toJson() }))
         .put("telemetry_status", "not_loaded")
 }

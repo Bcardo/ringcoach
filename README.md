@@ -29,7 +29,7 @@ Use **导入设置 JSON** to load a local settings file, review the replacement,
 
 Personal adaptations belong in the ignored `private/` folder or another local location. Only generic prompt templates are packaged in the APK.
 
-The database upgrade supports earlier schemas through version 6. On-device tests verify that settings edits preserve journal entries, stored custom prompts and coach cards survive upgrades, seven-day context queries respect dates, and failed imports roll back all changes.
+The database upgrade supports earlier schemas through version 7. On-device tests verify that settings edits preserve journal entries, stored custom prompts and coach cards survive upgrades, seven-day context queries respect dates, and failed imports roll back all changes.
 
 The debug build and Android unit tests passed, along with 14 on-device database and credential tests. The Settings screen, local import flow, and read-only Training tab were verified on the Fold7's outer display.
 
@@ -50,6 +50,16 @@ Enter the completed workout in the daily **训练** field and save. The original
 Future plans do not replace completed performance. Units, per-side loads, assistance, and rep notation stay as entered. Ambiguous passages remain visible for clarification in the journal. Editing training invalidates its old extraction; a late reply cannot replace a newer revision. Diet-only edits preserve recognized training. Pending work resumes when the app opens or changes tabs. Failed requests preserve the original text and provide a retry button; extraction requires a network connection and does not run as a background service while the app is closed.
 
 An opt-in live phone test used synthetic training to verify recognition, exclusion of tomorrow's planned weight, and persistence in a disposable database. No synthetic workout was added to the owner's journal.
+
+## Automatic nutrition progress
+
+Enter only today's intake in the journal's **饮食** field; **其他记录** can include today's reported weight or expenditure. Saving the raw journal queues recognition automatically with the saved Qwen key. Each day is retained in SQLite, so the owner never needs to re-enter seven days of history or provide extraction results. Home's **近 7 日饮食进度** reads seven calendar days from that database.
+
+The nutrition request contains only the dated diet and other notes. Directly reported numbers and food-based estimates retain source evidence and distinct labels; `≈` marks estimates. Meal subtotals remain separate from explicitly reported full-day totals. Planned food is excluded, unknown values remain null, and weight/expenditure are not invented. Intake minus expenditure is calculated locally when both are present; partial-day intake cannot be treated as a daily deficit. No expenditure report is required to save intake.
+
+Editing diet or other notes invalidates the prior extraction. Late responses cannot overwrite newer input, and training-only edits preserve parsed nutrition. Failures preserve the raw text and offer retry. Imported references remain visible for days without new nutrition input; current pending or failed inputs do not silently reuse an old imported total. Coach context includes current nutrition values, evidence, coverage, and extraction status.
+
+The debug build, 20 JVM tests, and 17 isolated on-device database/credential/history tests passed. An opt-in synthetic live Qwen test verified estimated breakfast intake, reported weight/expenditure, partial-day coverage, exclusion of tomorrow's plan, and SQLite persistence. The seven-day reference table was visually checked on the Fold7. Photo-assisted logging with portion/sauce notes is tracked separately in [issue #21](https://github.com/Bcardo/ringcoach/issues/21).
 
 ## In-app coach cards
 
