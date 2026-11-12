@@ -99,7 +99,7 @@ class DailyFoodStateTest {
             JSONObject().put("choices", org.json.JSONArray().put(JSONObject().put("finish_reason", "stop")
                 .put("message", JSONObject().put("content", answer.toJson().toString())))).toString()
         }
-        assertEquals(repaired, parsed)
+        assertEquals(repaired.copy(totalsSource = "local_food_fact_sum_v1"), parsed)
         assertEquals(2, requests.size)
         assertTrue(requests.all { !it.toString().contains("data:image/") })
     }

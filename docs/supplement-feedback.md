@@ -6,6 +6,8 @@ Incremental nutrition extraction returns source-linked supplement events alongsi
 
 Protein powder and other caloric supplements remain food. A taken supplement can reference its corresponding food fact; only food facts contribute to nutrient totals. Supplement records do not add nutrients a second time. Products with uncertain composition retain unknown nutrients rather than defaulting all supplements to zero calories. Ordinary supplement additions must preserve previously converted food facts.
 
+New/changed caloric supplement events require a matching food link; pointing at a different food from the same submission fails validation. After fact validation, nutrient sums are calculated locally instead of trusting the model's arithmetic. Unchanged older aliases are preserved. See [extraction and app-switch recovery](progress-recovery.md).
+
 The confirmed standing plan comes exclusively from the owner's saved routine, diet plan and instructions in Settings. It is sent separately as that original text. This slice adds no automatic routine inference or separate structured regimen editor. A one-off Journal mention and generated advice never update Settings. Longer-lived inspectable coaching memory remains issue #40.
 
 Events persist in immutable extraction-turn results and confirmed daily state in private journal SQLite, independently of coach prose. Existing results without supplement fields decode as an empty list; this upgrade does not retrospectively extract every old journal. Coaching receives seven calendar days ending on its request date, including per-day extraction status, events and the saved plan. Older events remain stored but are not all sent. The 30-day recovery chart range is separate from this coaching window.

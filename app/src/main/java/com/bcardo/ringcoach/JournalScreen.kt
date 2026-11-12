@@ -27,9 +27,9 @@ internal fun JournalApp(
     val processing = photos.working || workouts.syncing || nutrition.syncing || coach.busy
     val extractionReady = nutrition.loaded && workouts.loaded && !nutrition.needsKey && !workouts.needsKey && nutrition.notice == null && workouts.notice == null &&
         nutrition.days.none { it.status in setOf("pending", "failed") } && workouts.statuses.none { it.optString("status") != "complete" }
-    LaunchedEffect(coach.pendingProgressId, coach.retryTick, photos.working, workouts.syncing, nutrition.syncing, coach.busy, coach.hasKey, settings.busy, extractionReady) {
+    LaunchedEffect(coach.pendingProgressId, coach.retryTick, coach.foreground, photos.working, workouts.syncing, nutrition.syncing, coach.busy, coach.hasKey, settings.busy, extractionReady) {
         if (coach.pendingProgressId != null && !photos.working && !workouts.syncing && !nutrition.syncing &&
-            !coach.busy && coach.hasKey && !coach.loadFailed && !settings.busy && extractionReady) coach.prepareProgress(probe)
+            !coach.busy && coach.foreground && coach.hasKey && !coach.loadFailed && !settings.busy && extractionReady) coach.prepareProgress(probe)
     }
     LaunchedEffect(tab, today) {
         workouts.sync(today); nutrition.sync(today)
@@ -79,6 +79,7 @@ internal fun JournalApp(
                         DailyIntakeCard(nutrition.days.firstOrNull { it.date == today }, nutrition.syncing,
                             coach.card?.takeIf { it.date == today })
                         if (processing) Text("正在更新摄入、训练计划与教练建议…")
+                        if (coach.waitingForHealthRead) Text("进度已保存，返回 RingCoach 后继续读取健康数据并更新建议。")
                         if (coach.pendingProgressId != null && !processing) Text("有进度等待更新，可在日志中查看处理状态。")
                         coach.card?.let {
                             Text(if (coach.pendingProgressId != null) "上次教练建议 · 新进度尚未完成反馈" else "最新教练建议", style = MaterialTheme.typography.titleLarge)
@@ -113,6 +114,7 @@ internal fun JournalApp(
                             }
                         }
                         if (processing) Text("正在结合当天记录与恢复数据更新…")
+                        if (coach.waitingForHealthRead) Text("进度已保存，返回 RingCoach 后继续读取健康数据并更新建议。")
                         val failed = nutrition.notice != null || workouts.notice != null ||
                             nutrition.days.any { it.status == "failed" } || workouts.statuses.any { it.optString("status") == "failed" }
                         if (!processing && (failed || coach.pendingProgressId != null)) {

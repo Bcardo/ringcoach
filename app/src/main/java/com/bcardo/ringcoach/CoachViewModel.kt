@@ -24,6 +24,13 @@ internal class PreparedCoaching(val date: LocalDate, val context: JSONObject, va
 internal class CoachViewModel(application: Application) : AndroidViewModel(application) {
     private val store = JournalStore(application)
     private val credentials = QwenCredentials(application)
+    private val healthReadGate = ForegroundReadGate()
+    var foreground by mutableStateOf(false)
+        private set
+    var waitingForHealthRead by mutableStateOf(false)
+        private set
+
+    fun onForegroundChanged(active: Boolean) { foreground = active; healthReadGate.update(active) }
     var pendingProgressId by mutableStateOf<String?>(null)
         private set
     var pendingProgressDate by mutableStateOf<String?>(null)
@@ -192,7 +199,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
     fun prepareProgress(probe: HealthConnectProbe?) {
         val id = pendingProgressId ?: return
         val date = pendingProgressDate?.let(LocalDate::parse) ?: return
-        if (busy || loadFailed || !hasKey || attemptedProgressId == id) return
+        if (busy || loadFailed || !hasKey || !foreground || attemptedProgressId == id) return
         attemptedProgressId = id
         prepare(date, probe, autoGenerate = true, progressId = id)
     }
@@ -211,6 +218,13 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             try {
                 if (SamsungHealthScreenReader.enabled) SamsungHealthScreenReader.capture()
+                var telemetryStatus = "unavailable"
+                val telemetry = if (probe == null) null else try {
+                    healthReadGate.read(onWaiting = { waitingForHealthRead = it }) {
+                        withContext(Dispatchers.IO) { probe.coachingSnapshot(date) }
+                    }.also { telemetryStatus = "checked" }
+                } catch (exception: CancellationException) { throw exception }
+                catch (_: Exception) { telemetryStatus = "error"; null }
                 val context = withContext(Dispatchers.IO) {
                     val json = store.readyCoachingContext(date, asset("coaching-policy.md")).toJson()
                         .put("request_timezone", ZoneId.systemDefault().id)
@@ -226,17 +240,8 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     NightlyRecoveryStore(getApplication()).use { history ->
                         json.put("recovery_history", CoachingRecoveryHistory.compact(history.history(date.minusDays(30), date.minusDays(1)), date))
                     }
-                    if (probe == null) {
-                        json.put("telemetry_status", "unavailable")
-                    } else {
-                        try {
-                            json.put("telemetry", probe.coachingSnapshot(date)).put("telemetry_status", "checked")
-                        } catch (exception: CancellationException) {
-                            throw exception
-                        } catch (_: Exception) {
-                            json.put("telemetry_status", "error")
-                        }
-                    }
+                    json.put("telemetry_status", telemetryStatus)
+                    telemetry?.let { json.put("telemetry", it) }
                     json
                 }
                 nightlySnapshot = context.optJSONObject("nightly_recovery")

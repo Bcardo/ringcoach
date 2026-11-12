@@ -32,6 +32,7 @@ class NightlyCoachingLiveTest {
         val probe = HealthConnectProbe(HealthConnectClient.getOrCreate(app))
         val previousId = model.card?.id
         instrumentation.runOnMainSync {
+            model.onForegroundChanged(true)
             model.prepare(today, probe, autoGenerate = true)
         }
         val deadline = System.currentTimeMillis() + 100_000

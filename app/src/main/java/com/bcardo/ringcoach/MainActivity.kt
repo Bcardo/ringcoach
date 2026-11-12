@@ -65,6 +65,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        ViewModelProvider(this)[CoachViewModel::class.java].onForegroundChanged(true)
         val newDate = LocalDate.now()
         val changedDate = newDate != today
         today = newDate
@@ -73,6 +74,11 @@ class MainActivity : ComponentActivity() {
             lastForegroundSync = elapsed
             ViewModelProvider(this)[CoachViewModel::class.java].refreshNightly(readScreen = true)
         }
+    }
+
+    override fun onPause() {
+        ViewModelProvider(this)[CoachViewModel::class.java].onForegroundChanged(false)
+        super.onPause()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

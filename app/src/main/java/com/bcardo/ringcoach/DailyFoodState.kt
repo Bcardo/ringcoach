@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
 import kotlin.math.abs
+import java.math.BigDecimal
 
 /** Converted evidence, not a recommendation or a photograph. */
 internal data class FoodFact(
@@ -72,6 +73,13 @@ internal object DailyFoodState {
     }
 
     fun validate(job: PendingNutrition, result: NutritionExtraction) {
+        validateFacts(job, result)
+        if (job.turn == null) return
+        val current = result.foodItems.associateBy { it.id }
+        validateTotals(current.values.toList(), result)
+    }
+
+    fun validateFacts(job: PendingNutrition, result: NutritionExtraction) {
         val turn = job.turn ?: return
         SupplementState.validate(job, result)
         val previous = turn.previous?.foodItems?.associateBy { it.id } ?: emptyMap()
@@ -92,9 +100,36 @@ internal object DailyFoodState {
                 require(food.submissionIds.all { it in old.submissionIds || it == turn.id })
             }
         }
+    }
+
+    /** Calculate arithmetic only after all food/source/supplement links have passed validation. */
+    fun calculated(job: PendingNutrition, result: NutritionExtraction): NutritionExtraction {
+        if (job.turn == null) return result
+        validateFacts(job, result)
+        val values = result.values.toMutableMap()
+        for (field in MEAL_FIELDS) {
+            val known = result.foodItems.map { it.estimate.values[field] }
+            val total = if (known.isEmpty() || known.any { it == null }) null else
+                known.fold(BigDecimal.ZERO) { sum, value -> sum.add(BigDecimal.valueOf(value!!)) }.toDouble()
+            val original = values.getValue(field)
+            values[field] = when {
+                total == null -> NutritionValue(null, "missing", "")
+                original.value == total && original.kind in setOf("reported", "estimated") -> original
+                else -> {
+                    val evidence = (listOf(original.evidence, job.turn.previous?.values?.get(field)?.evidence.orEmpty(), job.turn.input) +
+                        job.turn.photoIds.map { "[照片 $it]" }).filter { it.isNotBlank() }.distinct().joinToString("\n")
+                    require(evidence.isNotBlank()) { "Calculated food totals need source evidence" }
+                    NutritionValue(total, "estimated", evidence)
+                }
+            }
+        }
+        return result.copy(values = values, totalsSource = "local_food_fact_sum_v1").also { validate(job, it) }
+    }
+
+    private fun validateTotals(foods: List<FoodFact>, result: NutritionExtraction) {
         // The visible total cannot silently disagree with the returned, reusable facts.
         for (field in MEAL_FIELDS) {
-            val known = current.values.map { it.estimate.values[field] }
+            val known = foods.map { it.estimate.values[field] }
             val total = result.values.getValue(field).value
             if (known.isNotEmpty() && known.all { it != null }) {
                 require(total != null && abs(total - known.sumOf { it!! }) <= if (field == "intake_kcal") 1.0 else 0.2) {
@@ -102,7 +137,7 @@ internal object DailyFoodState {
                 }
             }
             if (known.any { it == null }) require(total == null) { "Unknown food nutrient cannot become a complete total: $field" }
-            if (current.isEmpty()) require(total == null) { "No food facts support intake" }
+            if (foods.isEmpty()) require(total == null) { "No food facts support intake" }
         }
     }
 }
