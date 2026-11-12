@@ -17,7 +17,7 @@ internal object CoachingSnapshot {
         if (value is JSONObject) for (key in value.keys().asSequence().toList()) {
             if (key == "samples" || key == "heart_rate_samples") {
                 value.remove(key)
-                value.put("samples_retention", "transient_sent_not_archived")
+                value.put("samples_retention", "transient_samples_not_archived")
                 changed = true
             } else changed = strip(value.get(key)) || changed
         }

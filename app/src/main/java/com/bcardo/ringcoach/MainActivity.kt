@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.metadata.Device
 import androidx.lifecycle.ViewModelProvider
 import kotlinx.coroutines.CancellationException
@@ -62,10 +63,16 @@ import java.time.format.FormatStyle
 class MainActivity : ComponentActivity() {
     private var today by mutableStateOf(LocalDate.now())
     private var lastForegroundSync = 0L
+    private var foregroundProbe: HealthConnectProbe? = null
 
     override fun onResume() {
         super.onResume()
-        ViewModelProvider(this)[CoachViewModel::class.java].onForegroundChanged(true)
+        val coach = ViewModelProvider(this)[CoachViewModel::class.java]
+        coach.onForegroundChanged(true)
+        coach.reload()
+        coach.captureProgressHealth(foregroundProbe)
+        ProgressJob.schedule(this)
+        ProgressRuntime.changed()
         val newDate = LocalDate.now()
         val changedDate = newDate != today
         today = newDate
@@ -89,6 +96,7 @@ class MainActivity : ComponentActivity() {
         } else {
             null
         }
+        foregroundProbe = probe
         val samsungHealthVersion = try {
             packageManager.getPackageInfo(SAMSUNG_HEALTH_PACKAGE, PackageManager.PackageInfoFlags.of(0)).versionName
         } catch (_: PackageManager.NameNotFoundException) {
@@ -147,7 +155,8 @@ private fun ProbeScreen(probe: HealthConnectProbe?, samsungHealthVersion: String
     }
 
     val scope = rememberCoroutineScope()
-    val resolver = LocalContext.current.applicationContext.contentResolver
+    val resolverContext = LocalContext.current.applicationContext
+    val resolver = resolverContext.contentResolver
     var results by remember { mutableStateOf(emptyList<MetricResult>()) }
     var selected by remember { mutableStateOf(MetricKind.entries.toSet()) }
     var notice by remember { mutableStateOf<Int?>(null) }
@@ -155,7 +164,10 @@ private fun ProbeScreen(probe: HealthConnectProbe?, samsungHealthVersion: String
     var requesting by remember { mutableStateOf(false) }
     val permissionLauncher = rememberLauncherForActivityResult(
         PermissionController.createRequestPermissionResultContract(),
-    ) { requesting = false }
+    ) {
+        requesting = false
+        ProgressJob.schedule(resolverContext)
+    }
     val documentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         export.onDocumentResult(resolver, result.data?.data?.takeIf { result.resultCode == Activity.RESULT_OK })
     }
@@ -192,6 +204,18 @@ private fun ProbeScreen(probe: HealthConnectProbe?, samsungHealthVersion: String
             }
         }
     }) { Text(stringResource(R.string.request_permissions)) }
+    if (probe.supportsBackgroundRead()) {
+        OutlinedButton(enabled = controlsEnabled, onClick = {
+            runProbeAction {
+                if (probe.hasBackgroundReadAccess()) notice = R.string.permissions_already_granted
+                else {
+                    requesting = true
+                    permissionLauncher.launch(setOf(HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND))
+                }
+            }
+        }) { Text("允许后台读取健康数据（可选）") }
+        Text("允许后可在后台读取最新健康记录；未允许时使用已捕获的睡眠和心率统计，并标明采集时间。")
+    }
     Button(enabled = controlsEnabled, onClick = {
         runProbeAction {
             results = emptyList()

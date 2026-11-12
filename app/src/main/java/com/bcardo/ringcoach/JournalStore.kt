@@ -32,7 +32,7 @@ internal data class CoachingSettings(
 }
 
 internal class JournalStore(context: Context, name: String = "ringcoach.db") :
-    SQLiteOpenHelper(context.applicationContext, name, null, 12) {
+    SQLiteOpenHelper(context.applicationContext, name, null, 13) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createJournalTable(db)
@@ -45,6 +45,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         createProgressTable(db)
         IncrementalNutritionStore.createTables(db)
         ProgressCoachingStore.createTable(db)
+        ProgressWorkStore.createTables(db)
     }
 
     private fun createProgressTable(db: SQLiteDatabase) {
@@ -162,7 +163,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        check(oldVersion in 1..11 && newVersion == 12) { "Unsupported database migration" }
+        check(oldVersion in 1..12 && newVersion == 13) { "Unsupported database migration" }
         // SQLiteOpenHelper runs the migration in a transaction.
         if (oldVersion == 1) {
             db.execSQL("ALTER TABLE journal_entries RENAME TO journal_entries_v1")
@@ -216,6 +217,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         IncrementalNutritionStore.createTables(db)
         IncrementalNutritionStore(db).migrateConfirmedPhotos()
         if (oldVersion < 12) ProgressCoachingStore.migrate(db)
+        ProgressWorkStore.createTables(db)
     }
 
     @Synchronized

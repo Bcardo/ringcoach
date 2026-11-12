@@ -18,6 +18,12 @@ internal object CoachingRequestPackager {
         fun omission(section: String, count: Int, reason: String) {
             if (count > 0) omissions.put(JSONObject().put("section", section).put("count", count).put("reason", reason))
         }
+        val telemetry = context.optJSONObject("telemetry")
+        if (telemetry?.optString("capture_mode") == "retained_statistics") {
+            omissions.put(JSONObject().put("section", "current_night_raw_hr")
+                .put("count", telemetry.optJSONObject("current_night")?.optJSONObject("coverage")?.optInt("heart_rate_statistic_sample_count") ?: 0)
+                .put("reason", "transient_trace_unavailable_retained_statistics_only"))
+        }
         val journals = context.optJSONArray("journal_history") ?: JSONArray()
         val current = (0 until journals.length()).map { journals.getJSONObject(it) }.filter { it.optString("date") == date }
         omission("historical_journal_text", journals.length() - current.size, "historical_comparisons_use_structured_daily_facts")
@@ -109,6 +115,8 @@ internal object CoachingRequestPackager {
             .put("health_read_start", telemetry?.opt("window_start") ?: JSONObject.NULL)
             .put("health_read_end", telemetry?.opt("window_end") ?: JSONObject.NULL)
             .put("telemetry_status", context.optString("telemetry_status"))
+            .put("health_captured_at", telemetry?.opt("captured_at") ?: JSONObject.NULL)
+            .put("health_capture_mode", telemetry?.optString("capture_mode") ?: "unspecified")
             .put("source_checks", JSONObject().apply { sources.keys().asSequence().forEach { key ->
                 val metric = sources.getJSONObject(key)
                 put(key, JSONObject().put("status", metric.optString("status")).put("record_count", metric.optInt("record_count"))
