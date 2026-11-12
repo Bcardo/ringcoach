@@ -139,20 +139,27 @@ class SamsungHealthScreenReader : AccessibilityService() {
         val fingerprint = "$period|$scoreLabel|$hrvLabel"
         if (fingerprint != stableFingerprint) { stableFingerprint = fingerprint; stableSince = System.currentTimeMillis(); return }
         if (System.currentTimeMillis() - stableSince < 700) return
-        val energy = SamsungSummaryParser.energy(scoreLabel)
-        val hrv = SamsungSummaryParser.hrv(hrvLabel)
+        val readings = SamsungSummaryParser.dailyReadings(scoreLabel, hrvLabel)
+        if (readings == null) {
+            step = "unreadable_daily_summary"
+            finish(false)
+            return
+        }
+        val (energy, hrv) = readings
         val details = JSONObject().put("source_app", SAMSUNG_HEALTH_PACKAGE)
             .put("measurement", "vendor_daily_summary").put("ring_attribution", "not_verified")
             .put("date_label", period)
         NightlyRecoveryStore(this).use { store ->
             val records = buildList {
-                energy?.let { add(NightlyMetric(expected, "energy_score", it, "score", "samsung_health_screen", "daily", details)) }
-                hrv?.let { add(NightlyMetric(expected, "sleeping_hrv", it, "ms", "samsung_health_screen", "daily", details)) }
+                add(NightlyMetric(expected, "energy_score", energy, "score", "samsung_health_screen", "daily",
+                    JSONObject(details.toString()).put("precision", "vendor_screen_integer")))
+                add(NightlyMetric(expected, "sleeping_hrv", hrv, "ms", "samsung_health_screen", "daily",
+                    JSONObject(details.toString()).put("precision", "vendor_daily_hrv_display")))
             }
             store.replaceScreenDay(expected, records)
         }
-        if (hrv != null) captured++
-        if (dayIndex == 0 && hrv != null) capturedToday = true
+        captured++
+        if (dayIndex == 0) capturedToday = true
         nextDay(all)
     }
 
@@ -178,6 +185,11 @@ class SamsungHealthScreenReader : AccessibilityService() {
 }
 
 internal object SamsungSummaryParser {
+    fun dailyReadings(scoreLabel: String?, hrvLabel: String?): Pair<Double, Double>? {
+        val energy = energy(scoreLabel) ?: return null
+        val hrv = hrv(hrvLabel) ?: return null
+        return energy to hrv
+    }
     fun energy(label: String?): Double? = label?.let {
         Regex("(?:能量得分|Energy\\s*score)\\s*(\\d{1,3})(?!\\d)", RegexOption.IGNORE_CASE).find(it)?.groupValues?.get(1)?.toDoubleOrNull()
     }?.takeIf { it in 0.0..100.0 }

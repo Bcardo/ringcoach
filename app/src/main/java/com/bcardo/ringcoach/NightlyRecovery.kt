@@ -25,6 +25,9 @@ internal data class NightlyMetric(
     val source: String, val sourceId: String, val details: JSONObject = JSONObject(),
 ) {
     init {
+        require(sourceId.isNotBlank())
+        require(source in setOf("samsung_health_sdk", "samsung_health_screen"))
+        require(source != "samsung_health_sdk" || metric == "energy_score")
         require(value.isFinite())
         when (metric) {
             "energy_score" -> require(value in 0.0..100.0 && unit == "score")
@@ -34,43 +37,45 @@ internal data class NightlyMetric(
     }
     fun toJson(observedAt: Instant): JSONObject = JSONObject()
         .put("wake_date", date.toString()).put("metric", metric).put("value", value).put("unit", unit)
-        .put("source", source).put("observed_at", observedAt.toString()).put("details", details)
+        .put("source", source).put("source_record_id", sourceId).put("metric_definition", DailyRecoveryArchive.definition(metric))
+        .put("observed_at", observedAt.toString()).put("details", details)
 }
 
 internal class NightlyRecoveryStore(context: Context, name: String = "nightly-recovery.db") :
-    SQLiteOpenHelper(context.applicationContext, name, null, 1) {
+    SQLiteOpenHelper(context.applicationContext, name, null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE nightly_metrics (date TEXT NOT NULL, metric TEXT NOT NULL, source TEXT NOT NULL, source_id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(date, metric, source, source_id))")
         db.execSQL("CREATE TABLE sync_state (source TEXT PRIMARY KEY NOT NULL, status TEXT NOT NULL, checked_at TEXT NOT NULL)")
+        DailyRecoveryArchive.migrateV1(db)
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = error("Unsupported nightly migration")
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        check(oldVersion == 1 && newVersion == 2)
+        DailyRecoveryArchive.migrateV1(db)
+    }
 
     @Synchronized fun put(metric: NightlyMetric, now: Instant = Instant.now()) {
-        writableDatabase.insertWithOnConflict("nightly_metrics", null, ContentValues().apply {
-            put("date", metric.date.toString()); put("metric", metric.metric); put("source", metric.source)
-            put("source_id", metric.sourceId); put("json", metric.toJson(now).toString())
-        }, SQLiteDatabase.CONFLICT_REPLACE)
+        DailyRecoveryArchive(writableDatabase).put(metric, now)
     }
 
-    @Synchronized fun replaceEnergy(start: LocalDate, end: LocalDate, records: List<NightlyMetric>) {
+    @Synchronized fun replaceEnergy(start: LocalDate, end: LocalDate, records: List<NightlyMetric>, now: Instant = Instant.now()) {
         require(records.all { it.source == "samsung_health_sdk" && it.metric == "energy_score" && it.date in start..end })
         val db = writableDatabase
         db.beginTransaction()
         try {
-            db.delete("nightly_metrics", "source = ? AND metric = ? AND date BETWEEN ? AND ?", arrayOf("samsung_health_sdk", "energy_score", start.toString(), end.toString()))
-            records.forEach { put(it) }
+            DailyRecoveryArchive(db).reconcile("samsung_health_sdk", "energy_score", start, end, records, now)
             status("samsung_health_sdk", if (records.isEmpty()) "empty" else "available")
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }
 
-    @Synchronized fun replaceScreenDay(date: LocalDate, records: List<NightlyMetric>) {
+    @Synchronized fun replaceScreenDay(date: LocalDate, records: List<NightlyMetric>, now: Instant = Instant.now()) {
         require(records.all { it.date == date && it.source == "samsung_health_screen" })
         val db = writableDatabase
         db.beginTransaction()
         try {
-            db.delete("nightly_metrics", "date = ? AND source = ?", arrayOf(date.toString(), "samsung_health_screen"))
-            records.forEach { put(it) }
+            DAILY_RECOVERY_METRICS.forEach { metric ->
+                DailyRecoveryArchive(db).reconcile("samsung_health_screen", metric, date, date, records.filter { it.metric == metric }, now)
+            }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }
@@ -83,9 +88,7 @@ internal class NightlyRecoveryStore(context: Context, name: String = "nightly-re
 
     @Synchronized fun snapshot(date: LocalDate): JSONObject {
         val start = date.minusDays(6)
-        val records = readableDatabase.rawQuery("SELECT json FROM nightly_metrics WHERE date BETWEEN ? AND ? ORDER BY date DESC, metric, source", arrayOf(start.toString(), date.toString())).use { c ->
-            buildList { while (c.moveToNext()) add(JSONObject(c.getString(0))) }
-        }
+        val records = DailyRecoveryArchive(readableDatabase).records(start, date)
         val states = readableDatabase.rawQuery("SELECT source, status, checked_at FROM sync_state", null).use { c ->
             buildList { while (c.moveToNext()) add(JSONObject().put("source", c.getString(0)).put("status", c.getString(1)).put("checked_at", c.getString(2))) }
         }
@@ -94,6 +97,9 @@ internal class NightlyRecoveryStore(context: Context, name: String = "nightly-re
             .put("sleeping_hrv_sdk_support", "not_exposed")
             .put("interpretation", "Vendor sleeping HRV is a separate daily summary; do not substitute a mean of raw RMSSD windows or compute an HRV z-score from it.")
     }
+
+    @Synchronized fun history(start: LocalDate, end: LocalDate): JSONObject = DailyRecoveryArchive(readableDatabase).history(start, end)
+    @Synchronized fun revisions(date: LocalDate, metric: String): JSONArray = DailyRecoveryArchive(readableDatabase).revisions(date, metric)
 }
 
 internal object SamsungNightlyReader {
@@ -125,6 +131,7 @@ internal object SamsungNightlyReader {
                             val value = point.getValue(DataType.EnergyScoreType.ENERGY_SCORE)?.toDouble()
                             if (value != null && day in start..date) records += NightlyMetric(day, "energy_score", value, "score", "samsung_health_sdk", point.uid,
                                 JSONObject().put("source_app", point.dataSource?.appId ?: JSONObject.NULL)
+                                    .put("source_start_time", point.startTime.toString()).put("source_zone_offset", offset?.toString() ?: JSONObject.NULL)
                                     .put("timezone_basis", if (offset == null) "utc_calendar_date_without_offset" else "record_offset")
                                     .put("precision", "vendor_api_float")
                                     .put("ring_attribution", "not_verified"))

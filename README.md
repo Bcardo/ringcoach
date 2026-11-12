@@ -111,6 +111,16 @@ New photos are compressed JPEGs up to 1280 pixels and 700,000 bytes each, withou
 
 History groups journal text, recent nutrition and archived advice by date. Opening saved advice makes no model request. Current nutrition summaries cover seven days; raw journal and advice history are retained beyond that window. Technical context inspection and reviewed health JSON export are Settings tools.
 
+### Daily recovery archive (first slice)
+
+Energy Score and Samsung's daily sleeping HRV accumulate in private `nightly-recovery.db` (schema 2); refreshing the current seven-day source window does not remove older archived dates. Existing schema-1 readings migrate in place. No additional permission or manual archive action is needed. This slice adds storage/query support, without new screens or broader coaching context.
+
+Each observation retains its wake date, units, source record ID, metric definition, first observation and last verification times. Repeated identical reads update verification time; corrected values/metadata, confirmed source deletions and restorations leave an audit trail. An unreadable or failed capture preserves earlier readings. Only a complete successful source read can mark absent records missing; removed records remain in the revision audit rather than active history.
+
+`NightlyRecoveryStore.history(start, end)` returns every date in an inclusive window of up to 366 days, with one canonical value per metric and all source observations. This is a query limit, not a retention limit. Energy Score prefers SDK precision and falls back to the screen; sleeping HRV uses Samsung's daily screen value. Conflicting preferred-source readings yield an explicit ambiguous/null result rather than an average. Missing dates distinguish `not_checked` from `confirmed_missing`; neither is zero. Per-source coverage and the latest sync attempt are separate from a reading's verification time. `revisions(date, metric)` exposes the correction trail.
+
+The archive only contains locally observed data. It cannot recover HRV missed outside the reader's seven-day catch-up window. Charts, sleep/HR summaries, backup and expanded historical coaching remain separate work. This archive stores no meal photos or detailed heart-rate traces.
+
 ## Validation
 
 Build and run JVM tests with `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest`. Install app/test APKs with the existing debug signing key and `adb install -r` (also `-t` for the test APK); never uninstall to update the owner's app.

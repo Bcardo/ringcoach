@@ -5,6 +5,11 @@ import org.junit.Test
 import java.time.LocalDate
 
 class SamsungSummaryParserTest {
+    @org.junit.Test fun incompleteSummaryIsNotAConfirmedMissingDay() {
+        org.junit.Assert.assertNull(SamsungSummaryParser.dailyReadings("能量得分 82", "平均：-- 毫秒"))
+        org.junit.Assert.assertNull(SamsungSummaryParser.dailyReadings(null, "平均：62 毫秒"))
+        org.junit.Assert.assertEquals(82.0 to 62.0, SamsungSummaryParser.dailyReadings("能量得分 82", "平均：62 毫秒"))
+    }
     @Test fun readsVendorDailyValuesWithoutUsingChartTicksOrHeartRate() {
         assertEquals(82.0, SamsungSummaryParser.energy("能量得分82减号2良好")!!, 0.0)
         assertEquals(62.0, SamsungSummaryParser.hrv("平均：62 毫秒")!!, 0.0)
