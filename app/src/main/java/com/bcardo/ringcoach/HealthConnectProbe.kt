@@ -16,6 +16,7 @@ import kotlinx.coroutines.CancellationException
 import org.json.JSONObject
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.reflect.KClass
 
@@ -165,16 +166,15 @@ internal class HealthConnectProbe(private val client: HealthConnectClient) {
         return TelemetryExport.encode(window, results)
     }
 
-    suspend fun coachingSnapshot(): JSONObject {
-        val window = recentWindow()
+    suspend fun coachingSnapshot(date: LocalDate = LocalDate.now()): JSONObject {
+        val window = recentWindow(minOf(Instant.now(), date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant()))
         val range = TimeRangeFilter.between(window.start, window.end)
         val granted = client.permissionController.getGrantedPermissions()
         val results = metrics.map { it.read(client, granted, range, window) }
         return CoachingTelemetry.summarize(window, results, ZoneId.systemDefault())
     }
 
-    private fun recentWindow(): ExportWindow {
-        val end = Instant.now()
+    private fun recentWindow(end: Instant = Instant.now()): ExportWindow {
         return ExportWindow(end.minus(Duration.ofDays(PROBE_DAYS)), end)
     }
 }

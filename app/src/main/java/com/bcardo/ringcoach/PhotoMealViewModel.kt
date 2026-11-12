@@ -21,6 +21,30 @@ internal class PhotoMealViewModel(application: Application, private val state: S
     AndroidViewModel(application) {
     private val store = JournalStore(application)
     private val credentials = QwenCredentials(application)
+    var attachmentDate: LocalDate = LocalDate.now()
+    var attachments by mutableStateOf(state.get<ArrayList<String>>("progress_photos")?.toList() ?: emptyList())
+        private set
+
+    fun removeAttachment(id: String) = task {
+        if (id !in attachments) return@task
+        withContext(Dispatchers.IO) { PhotoMealStore(store.writableDatabase).remove(id) }
+        attachments = attachments - id
+        state["progress_photos"] = ArrayList(attachments)
+        if (selected?.id == id) { selected = null; preview = null }
+    }
+
+    fun submitProgress(id: String, draft: JournalDraft, onSaved: (JournalEntry) -> Unit, onChanged: () -> Unit) = task {
+        val text = listOf(draft.training, draft.diet, draft.additional).filter { it.isNotBlank() }.joinToString("\n")
+        val entry = withContext(Dispatchers.IO) { store.appendProgress(id, draft.date, text, attachments) }
+        attachments = emptyList()
+        state.remove<ArrayList<String>>("progress_photos")
+        selected = null; preview = null; notes = ""; consumed = false
+        state.remove<String>("meal_id"); state.remove<String>("meal_notes"); state.remove<Boolean>("meal_consumed")
+        onSaved(entry)
+        refresh()
+        onChanged()
+        notice = R.string.progress_submitted
+    }
     var meals by mutableStateOf(emptyList<PhotoMeal>())
         private set
     var selected by mutableStateOf<PhotoMeal?>(null)
@@ -91,8 +115,10 @@ internal class PhotoMealViewModel(application: Application, private val state: S
         saveDraft()
         val id = withContext(Dispatchers.IO) {
             val jpeg = MealPhotos.decode(getApplication(), uri)
-            PhotoMealStore(store.writableDatabase).create(LocalDate.now(), jpeg)
+            PhotoMealStore(store.writableDatabase).create(attachmentDate, jpeg)
         }
+        attachments = attachments + id
+        state["progress_photos"] = ArrayList(attachments)
         select(id)
         refresh()
     }
@@ -142,6 +168,7 @@ internal class PhotoMealViewModel(application: Application, private val state: S
             state.get<String>("meal_camera")?.let { MealPhotos.checkedCapture(app, it).delete() }
             val file = MealPhotos.captureFile(app)
             state["meal_camera"] = file.path
+            state["progress_camera_date"] = attachmentDate.toString()
             launch(MealPhotos.captureUri(app, file))
         } catch (_: Exception) { notice = R.string.photo_import_failed }
     }
@@ -156,8 +183,11 @@ internal class PhotoMealViewModel(application: Application, private val state: S
                     saveDraft()
                     val id = withContext(Dispatchers.IO) {
                         val jpeg = MealPhotos.decode(app, Uri.fromFile(file))
-                        PhotoMealStore(store.writableDatabase).create(LocalDate.now(), jpeg)
+                        PhotoMealStore(store.writableDatabase).create(
+                            state.get<String>("progress_camera_date")?.let(LocalDate::parse) ?: attachmentDate, jpeg)
                     }
+                    attachments = attachments + id
+                    state["progress_photos"] = ArrayList(attachments)
                     select(id)
                     refresh()
                 }

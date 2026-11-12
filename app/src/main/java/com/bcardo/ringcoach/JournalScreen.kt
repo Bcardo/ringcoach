@@ -2,302 +2,217 @@ package com.bcardo.ringcoach
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 
 @Composable
 internal fun JournalApp(
-    journal: JournalViewModel,
-    settings: SettingsViewModel,
-    coach: CoachViewModel,
-    workouts: WorkoutViewModel,
-    coachHistory: CoachHistoryViewModel,
-    nutrition: NutritionViewModel,
-    photos: PhotoMealViewModel,
-    today: LocalDate,
-    probe: HealthConnectProbe?,
-    probeContent: @Composable () -> Unit,
+    journal: JournalViewModel, settings: SettingsViewModel, coach: CoachViewModel,
+    workouts: WorkoutViewModel, coachHistory: CoachHistoryViewModel, nutrition: NutritionViewModel,
+    photos: PhotoMealViewModel, today: LocalDate, probe: HealthConnectProbe?, probeContent: @Composable () -> Unit,
 ) {
     var tab by rememberSaveable { mutableStateOf("home") }
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var diagnostics by rememberSaveable { mutableStateOf(false) }
     var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
-    LaunchedEffect(tab, today) {
-        if (tab !in setOf("history", "coach_history")) {
-            workouts.sync(today)
-            nutrition.sync(today)
-        }
+    val enabled = !journal.loading && !journal.saving && !journal.loadFailed && !photos.working
+    val processing = photos.working || workouts.syncing || nutrition.syncing || coach.busy
+    val extractionReady = nutrition.loaded && workouts.loaded && !nutrition.needsKey && !workouts.needsKey && nutrition.notice == null && workouts.notice == null &&
+        nutrition.days.none { it.status in setOf("pending", "failed") } && workouts.statuses.none { it.optString("status") != "complete" }
+    LaunchedEffect(coach.pendingProgressId, coach.retryTick, photos.working, workouts.syncing, nutrition.syncing, coach.busy, coach.hasKey, settings.busy, extractionReady) {
+        if (coach.pendingProgressId != null && !photos.working && !workouts.syncing && !nutrition.syncing &&
+            !coach.busy && coach.hasKey && !coach.loadFailed && !settings.busy && extractionReady) coach.prepareProgress(probe)
     }
-    LaunchedEffect(tab) { if (tab == "coach_history") coachHistory.reload() }
+    LaunchedEffect(tab, today) {
+        workouts.sync(today); nutrition.sync(today)
+        if (tab == "history") coachHistory.reload()
+    }
     LaunchedEffect(today, journal.loading) {
         if (!journal.loading && lastToday != today.toString()) {
-            val previousDay = LocalDate.parse(lastToday)
+            if (journal.draft.date.toString() == lastToday && !journal.hasChanges && photos.attachments.isEmpty()) journal.openDay(today)
             lastToday = today.toString()
-            if (journal.draft.date == previousDay) journal.openDay(today)
         }
     }
-    val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
-    val enabled = !journal.loading && !journal.saving && !journal.loadFailed && !photos.working
-    fun openDay(date: LocalDate) {
-        if (!enabled) return
-        if (journal.openDay(date)) tab = "journal"
+    BackHandler(enabled = settingsOpen || tab != "home") {
+        if (diagnostics) diagnostics = false else if (settingsOpen) settingsOpen = false else tab = "home"
     }
-    BackHandler(enabled = tab != "home") { tab = if (tab == "coach_history") "history" else "home" }
-    MaterialTheme(colorScheme = colors) {
-        Scaffold(
-            bottomBar = {
-                NavigationBar {
-                    for ((destination, title) in listOf(
-                        "home" to R.string.nav_home, "training" to R.string.nav_training,
-                        "journal" to R.string.nav_journal,
-                        "coach" to R.string.nav_coach,
-                        "history" to R.string.nav_history,
-                    )) {
-                        NavigationBarItem(
-                            selected = tab == destination || (destination == "history" && tab == "coach_history") ||
-                                (destination == "home" && tab in setOf("nutrition", "photos")),
-                            onClick = {
-                                if (destination == "journal") openDay(today) else tab = destination
-                            },
-                            icon = { Text(stringResource(title)) },
-                        )
-                    }
-                }
-            },
-        ) { padding ->
-            if (tab == "coach_history") {
-                CoachHistoryScreen(coachHistory, Modifier.padding(padding)) { tab = "history" }
-            } else if (tab == "history") {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    item { Text(stringResource(R.string.nav_history),
-                        modifier = Modifier.padding(top = 24.dp),
-                        style = MaterialTheme.typography.headlineLarge) }
-                    item { JournalLoadState(journal) }
-                    item {
-                        OutlinedButton(onClick = { tab = "coach_history" }) {
-                            Text(stringResource(R.string.coach_history_title))
-                        }
-                    }
-                    if (enabled && journal.entries.isEmpty()) {
-                        item { Text(stringResource(R.string.journal_history_empty)) }
-                    }
-                    items(journal.entries, key = { it.draft.date.toString() }) { entry ->
-                        JournalEntryCard(entry, enabled) { openDay(entry.draft.date) }
-                    }
-                }
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(padding)
-                        .verticalScroll(rememberScrollState()).padding(24.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Text(
-                        stringResource(when (tab) {
-                            "journal" -> R.string.nav_journal
-                            "data" -> R.string.nav_data
-                            "settings" -> R.string.nav_settings
-                            "coach" -> R.string.nav_coach
-                            "training" -> R.string.nav_training
-                            "nutrition" -> R.string.nutrition_title
-                            "photos" -> R.string.photo_title
-                            else -> R.string.app_name
-                        }),
-                        style = MaterialTheme.typography.headlineLarge,
-                    )
-                    when (tab) {
-                        "data" -> probeContent()
-                        "training" -> {
-                            TodayFoodSummary(nutrition.days.firstOrNull { it.date == today },
-                                journal.entries.firstOrNull { it.draft.date == today }?.draft?.diet ?: "") { openDay(today) }
-                            WorkoutScreen(workouts, today)
-                        }
-                        "nutrition" -> NutritionScreen(nutrition, today) { openDay(today) }
-                        "photos" -> {
-                            TextButton(onClick = { openDay(today) }) { Text(stringResource(R.string.journal_open_today)) }
-                        }
-                        "settings" -> SettingsEditor(settings, coach, today)
-                        "coach" -> CoachScreen(
-                            coach,
-                            hasUnsavedInput = journal.hasChanges || settings.hasChanges || photos.hasChanges,
-                            inputsReady = !journal.loading && !journal.loadFailed &&
-                                !settings.busy && !settings.loadFailed && !workouts.syncing && !nutrition.syncing && !photos.working,
-                            onPrepare = { coach.prepare(today, probe) },
-                            onSettings = { tab = "settings" },
-                        )
-                        "journal" -> {
-                            JournalLoadState(journal)
-                            JournalEditor(journal, enabled, photos, today) {
-                                photos.submit(journal.draft, journal::acceptSaved) {
-                                    workouts.sync(today, retryFailed = true)
-                                    nutrition.sync(today, retryFailed = true)
-                                }
-                            }
-                            nutrition.days.firstOrNull { it.date == journal.draft.date }?.let {
-                                MealOverlapControls(it, nutrition, today)
-                                if (it.result?.coverage == "daily_total" && it.photoMeals.isNotEmpty()) {
-                                    Text(stringResource(R.string.daily_total_append_help))
-                                }
-                            }
-                        }
-                        else -> {
-                            Text(today.toString(), style = MaterialTheme.typography.titleMedium)
-                            OutlinedButton(onClick = { tab = "nutrition" }, modifier = Modifier.fillMaxWidth()) {
-                                Text(stringResource(R.string.nutrition_title))
-                            }
-                            JournalLoadState(journal)
-                            val entry = journal.entries.firstOrNull { it.draft.date == today }
-                            if (entry == null && enabled) {
-                                Text(stringResource(if (nutrition.days.any { it.date == today && it.photoMeals.isNotEmpty() })
-                                    R.string.daily_existing_meals else R.string.journal_today_empty))
-                            }
-                            entry?.let { JournalEntryCard(it, enabled) { openDay(today) } }
-                            run {
-                                Button(
-                                    enabled = enabled,
-                                    onClick = { openDay(today) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) { Text(stringResource(if (entry == null) R.string.journal_open_today else R.string.daily_continue)) }
-                            }
-                            OutlinedButton(
-                                onClick = { tab = "data" },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text(stringResource(R.string.home_health_data)) }
-                            Button(
-                                onClick = { tab = "coach" },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text(stringResource(R.string.home_coach)) }
-                            TextButton(
-                                onClick = { tab = "settings" },
-                                modifier = Modifier.fillMaxWidth(),
-                            ) { Text(stringResource(R.string.nav_settings)) }
-                        }
-                    }
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+        Scaffold(bottomBar = {
+            NavigationBar {
+                for ((destination, title) in listOf("home" to "今日", "training" to "训练", "journal" to "日志", "history" to "历史")) {
+                    NavigationBarItem(selected = tab == destination, onClick = {
+                        tab = destination; settingsOpen = false; diagnostics = false
+                    }, icon = { Text(title) })
                 }
             }
-        }
-        journal.pendingDay?.let {
-            AlertDialog(
-                onDismissRequest = journal::cancelOpen,
-                title = { Text(stringResource(R.string.journal_discard_title)) },
-                text = { Text(stringResource(R.string.journal_discard_message)) },
-                confirmButton = {
-                    TextButton(onClick = { journal.discardAndOpen(); tab = "journal" }) {
-                        Text(stringResource(R.string.journal_discard_confirm))
+        }) { padding ->
+            val scroll = key(tab, settingsOpen, diagnostics) { rememberScrollState() }
+            Column(Modifier.fillMaxSize().padding(padding).verticalScroll(scroll).padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(if (settingsOpen) { if (diagnostics) "健康连接与诊断" else "设置" }
+                        else when (tab) { "training" -> "训练"; "journal" -> "日志"; "history" -> "历史"; else -> "今日" },
+                        style = MaterialTheme.typography.headlineLarge)
+                    TextButton(onClick = { if (settingsOpen) { if (diagnostics) diagnostics = false else settingsOpen = false }
+                        else settingsOpen = true }) { Text(if (settingsOpen) "返回" else "设置") }
+                }
+                if (settingsOpen) {
+                    if (diagnostics) probeContent() else {
+                        SettingsEditor(settings, coach, today)
+                        TextButton(onClick = { diagnostics = true }) { Text("Health Connect · 连接与诊断") }
                     }
-                },
-                dismissButton = {
-                    TextButton(onClick = journal::cancelOpen) { Text(stringResource(android.R.string.cancel)) }
-                },
-            )
+                } else when (tab) {
+                    "home" -> {
+                        Text(today.toString())
+                        NightlyRecoveryPanel(coach, today)
+                        DailyIntakeCard(nutrition.days.firstOrNull { it.date == today }, nutrition.syncing,
+                            coach.card?.takeIf { it.date == today })
+                        if (processing) Text("正在更新摄入、训练计划与教练建议…")
+                        if (coach.pendingProgressId != null && !processing) Text("有进度等待更新，可在日志中查看处理状态。")
+                        coach.card?.let {
+                            Text("最新教练建议", style = MaterialTheme.typography.titleLarge)
+                            Text("更新于 ${coachCardTimestamp(it.createdAt)}", style = MaterialTheme.typography.bodySmall)
+                            if (it.date != today) Text("这是 ${it.date} 的建议，今日尚未更新。")
+                            it.advice.notes.forEach { note -> Text("• $note") }
+                        }
+                    }
+                    "training" -> {
+                        val card = coach.card
+                        Text("当前训练计划", style = MaterialTheme.typography.titleLarge)
+                        Text("完整动作计划与最新表现", style = MaterialTheme.typography.titleMedium)
+                        WorkoutScreen(workouts, today, readOnly = true)
+                        if (card != null) {
+                            Text("最新教练调整", style = MaterialTheme.typography.titleMedium)
+                            Text("计划日期 ${card.date} · 更新于 ${coachCardTimestamp(card.createdAt)}", style = MaterialTheme.typography.bodySmall)
+                            card.advice.training.forEach { Text("• $it") }
+                        } else Text("提交进度后，教练会结合恢复状态更新训练安排。")
+                        settings.draft?.routine?.takeIf { it.isNotBlank() }?.let {
+                            Text("训练约束与说明", style = MaterialTheme.typography.titleMedium)
+                            Text(it.replace("**", "").replace(Regex("(?m)^#+\\s*"), ""))
+                        }
+                    }
+                    "journal" -> {
+                        JournalLoadState(journal)
+                        ProgressComposer(journal, photos, enabled && !processing, today) {
+                            photos.submitProgress(journal.submissionId, journal.draft, { entry ->
+                                journal.acceptSaved(entry); coach.queueProgress(today)
+                            }) {
+                                workouts.sync(today, retryFailed = true); nutrition.sync(today, retryFailed = true)
+                            }
+                        }
+                        if (processing) Text("正在结合当天记录与恢复数据更新…")
+                        val failed = nutrition.notice != null || workouts.notice != null ||
+                            nutrition.days.any { it.status == "failed" } || workouts.statuses.any { it.optString("status") == "failed" }
+                        if (!processing && (failed || coach.pendingProgressId != null)) {
+                            Text(when {
+                                nutrition.notice != null || nutrition.days.any { it.status == "failed" } -> "饮食分析未完成，因此摄入和教练建议尚未更新。已提交内容保留，无需再次输入。"
+                                workouts.notice != null || workouts.statuses.any { it.optString("status") == "failed" } -> "训练识别未完成。已提交内容保留，无需再次输入。"
+                                else -> "摄入和训练识别已完成，教练建议尚未更新。无需再次输入。"
+                            })
+                            nutrition.notice?.let { Text(stringResource(it)) }
+                            workouts.notice?.let { Text(stringResource(it)) }
+                            if (!coach.hasKey) Text("请在设置中配置千问密钥。")
+                            coach.notice?.let { Text(stringResource(it)) }
+                            OutlinedButton(enabled = coach.hasKey, onClick = {
+                                workouts.sync(today, retryFailed = true); nutrition.sync(today, retryFailed = true)
+                                if (coach.pendingProgressId == null) coach.queueProgress(today) else coach.allowProgressRetry()
+                            }) { Text("重试更新") }
+                        }
+                    }
+                    "history" -> ProgressHistory(journal, nutrition, coachHistory)
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun JournalLoadState(journal: JournalViewModel) {
-    if (journal.loading) Text(stringResource(R.string.journal_loading))
+    if (journal.loading) Text("正在读取日志…")
     if (journal.loadFailed) {
-        Text(stringResource(R.string.journal_load_failed))
-        OutlinedButton(onClick = journal::reload) { Text(stringResource(R.string.journal_retry)) }
+        Text("无法读取日志")
+        OutlinedButton(onClick = journal::reload) { Text("重试") }
     }
 }
 
 @Composable
-private fun JournalEditor(journal: JournalViewModel, enabled: Boolean, photos: PhotoMealViewModel, today: LocalDate, onSubmit: () -> Unit) {
-    val draft = journal.draft
-    Text(stringResource(R.string.journal_editing_date, draft.date.toString()),
-        style = MaterialTheme.typography.bodySmall)
-    OutlinedTextField(
-        value = draft.training,
-        onValueChange = { journal.updateDraft(draft.copy(training = it)) },
-        label = { Text(stringResource(R.string.journal_training)) },
-        minLines = 3,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedTextField(
-        value = draft.diet,
-        onValueChange = { journal.updateDraft(draft.copy(diet = it)) },
-        label = { Text(stringResource(R.string.journal_diet)) },
-        minLines = 3,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Text(stringResource(R.string.daily_diet_help), style = MaterialTheme.typography.bodySmall)
-    OutlinedTextField(
-        value = draft.additional,
-        onValueChange = { journal.updateDraft(draft.copy(additional = it)) },
-        label = { Text(stringResource(R.string.journal_additional)) },
-        minLines = 2,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-    )
-    journal.notice?.let { Text(stringResource(it)) }
-    if (draft.date == today) {
-        Text(stringResource(R.string.daily_meals_title), style = MaterialTheme.typography.titleLarge)
-        PhotoMealScreen(photos, today, {}, {}, batch = true)
-    }
-    Text(stringResource(R.string.workout_save_help), style = MaterialTheme.typography.bodySmall)
-    Button(
-        onClick = onSubmit,
-        enabled = enabled && (journal.hasChanges || photos.hasChanges ||
-            (journal.entries.none { it.draft.date == draft.date } && photos.meals.any { it.date == draft.date }) || photos.meals.any {
-            it.date == draft.date && it.consumed && it.status in setOf("draft", "failed", "pending") }),
-        modifier = Modifier.fillMaxWidth(),
-    ) { Text(stringResource(if (photos.working) R.string.journal_saving else R.string.daily_submit_all)) }
-    photos.notice?.let { Text(stringResource(it)) }
-}
-
-@Composable
-private fun JournalEntryCard(entry: JournalEntry, enabled: Boolean, onOpen: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(entry.draft.date.toString(), style = MaterialTheme.typography.titleMedium)
-            if (entry.draft.training.isNotBlank()) {
-                Text(stringResource(R.string.journal_training_value, entry.draft.training),
-                    maxLines = 3, overflow = TextOverflow.Ellipsis)
-            }
-            if (entry.draft.diet.isNotBlank()) {
-                Text(stringResource(R.string.journal_diet_value, entry.draft.diet),
-                    maxLines = 3, overflow = TextOverflow.Ellipsis)
-            }
-            if (entry.draft.additional.isNotBlank()) {
-                Text(stringResource(R.string.journal_additional_value, entry.draft.additional),
-                    maxLines = 3, overflow = TextOverflow.Ellipsis)
-            }
-            TextButton(enabled = enabled, onClick = onOpen) { Text(stringResource(R.string.journal_edit)) }
+private fun ProgressComposer(journal: JournalViewModel, photos: PhotoMealViewModel, enabled: Boolean, today: LocalDate, onSubmit: () -> Unit) {
+    var dateInput by rememberSaveable { mutableStateOf(journal.draft.date.toString()) }
+    LaunchedEffect(journal.draft.date) { dateInput = journal.draft.date.toString() }
+    val parsedDate = runCatching { LocalDate.parse(dateInput) }.getOrNull()?.takeIf { !it.isAfter(today) }
+    OutlinedTextField(value = dateInput, onValueChange = {
+        dateInput = it
+        runCatching { LocalDate.parse(it) }.getOrNull()?.takeIf { date -> !date.isAfter(today) }?.let { date ->
+            journal.updateDraft(journal.draft.copy(date = date))
         }
+    }, label = { Text("记录日期 · YYYY-MM-DD") }, singleLine = true,
+        enabled = enabled && photos.attachments.isEmpty(), isError = parsedDate == null, modifier = Modifier.fillMaxWidth())
+    Text("汇报这一天的新进度，也可以直接更正之前的记录。文字和照片会一起分析，无需另建餐食。")
+    OutlinedTextField(value = listOf(journal.draft.training, journal.draft.diet, journal.draft.additional).filter { it.isNotBlank() }.joinToString("\n"),
+        onValueChange = { if (it.length <= 12000) journal.updateDraft(JournalDraft(journal.draft.date, additional = it)) },
+        label = { Text("饮食、训练或其他进度") }, minLines = 6, enabled = enabled, modifier = Modifier.fillMaxWidth())
+    ProgressAttachments(photos, journal.draft.date, enabled && parsedDate == journal.draft.date)
+    Button(enabled = enabled && parsedDate == journal.draft.date && (journal.hasChanges || photos.attachments.isNotEmpty()),
+        onClick = onSubmit, modifier = Modifier.fillMaxWidth()) { Text("提交更新") }
+}
+
+@Composable
+private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewModel, history: CoachHistoryViewModel) {
+    JournalLoadState(journal)
+    if (history.loading) Text("正在读取历史…")
+    if (history.loadFailed) OutlinedButton(onClick = history::retry) { Text("重试读取历史") }
+    val dates = (journal.entries.map { it.draft.date } + history.cards.map { it.date } + nutrition.days.filter { it.status != "missing" }.map { it.date })
+        .distinct().sortedDescending()
+    if (dates.isEmpty()) Text("提交第一条进度后，会在这里按日期保留记录和建议。")
+    for (date in dates) {
+        var expanded by rememberSaveable(date.toString()) { mutableStateOf(false) }
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { expanded = !expanded }) { Text("$date · ${if (expanded) "收起" else "查看当天记录"}") }
+                nutrition.days.firstOrNull { it.date == date }?.result?.let {
+                    Text("已记录摄入：${nutritionNumber(it.values["intake_kcal"]?.value)} kcal · 蛋白质 ${nutritionNumber(it.values["protein_grams"]?.value)} g")
+                }
+                nutrition.days.firstOrNull { it.date == date }?.reference?.let {
+                    Text("导入历史参考：${nutritionNumber(it.intakeKcal)} kcal · 蛋白质 ${nutritionNumber(it.proteinGrams)} g")
+                }
+                if (expanded) {
+                    journal.entries.firstOrNull { it.draft.date == date }?.draft?.let {
+                        val legacyTraining = it.training.substringBefore("[更新 ").trim()
+                        if (legacyTraining.isNotBlank()) Text(legacyTraining)
+                        if (it.diet.isNotBlank()) Text(it.diet)
+                        if (it.additional.isNotBlank()) Text(it.additional
+                            .replace(Regex("\\[更新 ([^ ]+) · [^]]+]")) { match ->
+                                runCatching { "更新于 " + coachCardTimestamp(java.time.Instant.parse(match.groupValues[1])) }.getOrDefault("进度更新")
+                            }.replace(Regex("\\[照片 [^]]+]"), "（附照片）"))
+                    }
+                    history.cards.filter { it.date == date }.forEach { summary ->
+                        TextButton(onClick = { history.open(summary.id) }) { Text("教练建议 · ${coachCardTimestamp(summary.createdAt)}") }
+                    }
+                }
+            }
+        }
+    }
+    if (history.hasMore) OutlinedButton(enabled = !history.loading, onClick = history::loadMore) { Text("加载更早的建议") }
+    if (history.opening || history.selected != null || history.detailError != null) {
+        AlertDialog(onDismissRequest = history::closeDetail, title = { Text("当时的教练建议") }, text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (history.opening) Text("正在读取…")
+                history.detailError?.let { Text(stringResource(it)) }
+                history.selected?.let { card ->
+                    Text(coachCardTimestamp(card.createdAt))
+                    for ((title, rows) in listOf("训练" to card.advice.training, "饮食" to card.advice.diet, "依据" to card.advice.notes)) {
+                        Text(title, style = MaterialTheme.typography.titleMedium); rows.forEach { Text("• $it") }
+                    }
+                }
+            }
+        }, confirmButton = { TextButton(onClick = history::closeDetail) { Text("关闭") } })
     }
 }

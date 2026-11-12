@@ -2,6 +2,7 @@ plugins {
     id("com.android.application") version "8.13.2"
     id("org.jetbrains.kotlin.android") version "2.2.21"
     id("org.jetbrains.kotlin.plugin.compose") version "2.2.21"
+    id("org.jetbrains.kotlin.plugin.parcelize") version "2.2.21"
 }
 
 android {
@@ -36,6 +37,8 @@ kotlin {
 }
 
 dependencies {
+    implementation(files("libs/samsung-health-data-api-1.1.0.aar"))
+    implementation("com.google.code.gson:gson:2.11.0")
     implementation(platform("androidx.compose:compose-bom:2025.10.00"))
     implementation("androidx.activity:activity-compose:1.11.0")
     implementation("androidx.compose.foundation:foundation")

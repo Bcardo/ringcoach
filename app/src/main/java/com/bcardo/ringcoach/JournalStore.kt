@@ -32,7 +32,7 @@ internal data class CoachingSettings(
 }
 
 internal class JournalStore(context: Context, name: String = "ringcoach.db") :
-    SQLiteOpenHelper(context.applicationContext, name, null, 9) {
+    SQLiteOpenHelper(context.applicationContext, name, null, 10) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createJournalTable(db)
@@ -42,6 +42,14 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         createWorkoutTables(db)
         createNutritionTable(db)
         PhotoMealStore.createTables(db)
+        createProgressTable(db)
+    }
+
+    private fun createProgressTable(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE progress_submissions (
+            id TEXT PRIMARY KEY NOT NULL, date TEXT NOT NULL, text TEXT NOT NULL,
+            photo_ids TEXT NOT NULL, created_at TEXT NOT NULL)""")
+        db.execSQL("ALTER TABLE nutrition_extractions ADD COLUMN unified INTEGER NOT NULL DEFAULT 0")
     }
 
     override fun onConfigure(db: SQLiteDatabase) {
@@ -152,7 +160,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        check(oldVersion in 1..8 && newVersion == 9) { "Unsupported database migration" }
+        check(oldVersion in 1..9 && newVersion == 10) { "Unsupported database migration" }
         // SQLiteOpenHelper runs the migration in a transaction.
         if (oldVersion == 1) {
             db.execSQL("ALTER TABLE journal_entries RENAME TO journal_entries_v1")
@@ -201,7 +209,8 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             WHERE TRIM(diet) != '' OR TRIM(additional) != ''
         """.trimIndent())
         }
-        PhotoMealStore.createTables(db)
+        if (oldVersion < 9) PhotoMealStore.createTables(db)
+        createProgressTable(db)
     }
 
     @Synchronized
@@ -303,6 +312,61 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             db.setTransactionSuccessful()
             return saved
         } finally { db.endTransaction() }
+    }
+
+    /** Append immutable dated input; re-analyze the whole day, never add a new estimate to an old total. */
+    @Synchronized
+    fun appendProgress(id: String, date: LocalDate, text: String, photoIds: List<String>): JournalEntry {
+        require(text.isNotBlank() || photoIds.isNotEmpty())
+        require(text.length <= 12000 && photoIds.distinct().size == photoIds.size)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val existing = db.rawQuery("SELECT date, text, photo_ids FROM progress_submissions WHERE id = ?", arrayOf(id)).use {
+                if (it.moveToFirst()) listOf(it.getString(0), it.getString(1), it.getString(2)) else null
+            }
+            if (existing != null) {
+                require(existing == listOf(date.toString(), text.trim(), JSONArray(photoIds).toString()))
+                return readJournals("date = ?", arrayOf(date.toString())).single()
+            }
+            val photos = PhotoMealStore(db)
+            for (photoId in photoIds) {
+                val meal = requireNotNull(photos.get(photoId))
+                require(meal.date == date && !meal.consumed && meal.hasPhoto)
+                photos.edit(photoId, text.take(4000), true)
+            }
+            val previous = readJournals("date = ?", arrayOf(date.toString())).firstOrNull()?.draft ?: JournalDraft(date)
+            val stamp = Instant.now().toString()
+            val event = "[更新 $stamp · $id]\n" + text.trim() + photoIds.joinToString("") { "\n[照片 $it]" }
+            fun append(old: String) = listOf(old, event).filter { it.isNotBlank() }.joinToString("\n\n")
+            val saved = save(previous.copy(training = append(previous.training), additional = append(previous.additional)))
+            // Include pre-redesign meals on the first unified update, preserving their notes and estimates as context.
+            val meals = photos.list(date, date).filter { it.consumed }
+            val legacy = meals.filter { !saved.draft.additional.contains("[照片 ${it.id}]") }.joinToString("\n") {
+                "[历史餐食 ${it.id}] ${it.notes}\n${it.estimate?.toJson() ?: ""}" +
+                    if (it.hasPhoto) "\n[照片 ${it.id}]" else ""
+            }
+            val source = listOf(saved.draft.additional, legacy).filter { it.isNotBlank() }.joinToString("\n")
+            db.execSQL("""INSERT INTO nutrition_extractions
+                (date, source_revision, source_diet, source_additional, status, unified)
+                VALUES (?, ?, ?, ?, 'pending', 1) ON CONFLICT(date) DO UPDATE SET
+                source_revision = excluded.source_revision, source_diet = excluded.source_diet,
+                source_additional = excluded.source_additional, status = 'pending', result_json = NULL, unified = 1
+            """, arrayOf(date.toString(), id, saved.draft.diet, source))
+            db.execSQL("INSERT INTO progress_submissions VALUES (?, ?, ?, ?, ?)",
+                arrayOf(id, date.toString(), text.trim(), JSONArray(photoIds).toString(), stamp))
+            db.setTransactionSuccessful()
+            return saved
+        } finally { db.endTransaction() }
+    }
+
+    @Synchronized
+    fun nutritionPhotos(job: PendingNutrition): List<Pair<String, ByteArray>> {
+        if (!job.unified) return emptyList()
+        val photos = PhotoMealStore(readableDatabase)
+        return photos.list(job.date, job.date).filter {
+            it.consumed && it.hasPhoto && job.source.contains("[照片 ${it.id}]")
+        }.map { it.id to requireNotNull(photos.image(it.id)) }
     }
 
     @Synchronized
@@ -429,11 +493,11 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     @Synchronized
     fun nextPendingNutrition(): PendingNutrition? {
         return readableDatabase.rawQuery("""
-            SELECT date, source_revision, source_diet, source_additional FROM nutrition_extractions
+            SELECT date, source_revision, source_diet, source_additional, unified FROM nutrition_extractions
             WHERE status = 'pending' ORDER BY date LIMIT 1
         """.trimIndent(), null).use {
             if (!it.moveToFirst()) null else PendingNutrition(
-                LocalDate.parse(it.getString(0)), it.getString(1), it.getString(2), it.getString(3),
+                LocalDate.parse(it.getString(0)), it.getString(1), it.getString(2), it.getString(3), it.getInt(4) != 0,
             )
         }
     }
@@ -461,7 +525,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
 
     private fun nutritionDays(date: LocalDate, references: List<NutritionReference>): List<NutritionDay> {
         val parsed = readableDatabase.rawQuery("""
-            SELECT date, status, result_json, source_diet, source_additional FROM nutrition_extractions
+            SELECT date, status, result_json, source_diet, source_additional, unified FROM nutrition_extractions
             WHERE date BETWEEN ? AND ? ORDER BY date
         """.trimIndent(), arrayOf(date.minusDays(6).toString(), date.toString())).use { cursor ->
             buildMap {
@@ -469,7 +533,8 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                     val day = LocalDate.parse(cursor.getString(0))
                     val result = if (cursor.isNull(2)) null else NutritionExtractor.decode(cursor.getString(2),
                         nutritionSource(cursor.getString(3), cursor.getString(4)))
-                    put(day, NutritionDay(day, cursor.getString(1), result))
+                    put(day, NutritionDay(day, cursor.getString(1), result,
+                        photoMode = if (cursor.getInt(5) != 0) "unified" else null))
                 }
             }
         }
@@ -479,7 +544,8 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             val day = date.minusDays(offset)
             val base = parsed[day] ?: references.firstOrNull { it.date == day }?.let { NutritionDay(day, "reference", reference = it) }
                 ?: NutritionDay(day, "missing")
-            MealNutrition.merge(base, meals[day] ?: emptyList(), photos.mode(day))
+            if (base.photoMode == "unified") base.copy(photoMeals = meals[day]?.filter { it.consumed } ?: emptyList())
+            else MealNutrition.merge(base, meals[day] ?: emptyList(), photos.mode(day))
         }
     }
 

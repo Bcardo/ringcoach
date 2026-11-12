@@ -12,3 +12,5 @@ btsnoop_hci.log*
 *.pcap
 *.pcapng
 /private/
+/samsung-health-data-sdk-*.zip
+/app/libs/*.aar

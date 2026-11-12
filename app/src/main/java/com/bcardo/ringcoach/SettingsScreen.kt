@@ -18,6 +18,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
@@ -39,13 +43,22 @@ internal fun SettingsEditor(settings: SettingsViewModel, coach: CoachViewModel, 
     }
     val draft = settings.draft ?: return
     val enabled = !settings.busy && !settings.loadFailed
-    QwenKeyEditor(coach)
+    var connectionOpen by rememberSaveable { mutableStateOf(false) }
+    var advancedOpen by rememberSaveable { mutableStateOf(false) }
+    TextButton(onClick = { connectionOpen = !connectionOpen }) { Text("账号与健康连接") }
+    if (connectionOpen) {
+        QwenKeyEditor(coach)
+        NightlyRecoveryPanel(coach, today, setup = true)
+    }
     Text(stringResource(R.string.settings_context_help))
+    TextButton(onClick = { advancedOpen = !advancedOpen }) { Text("高级 · 导入与上下文检查") }
+    if (advancedOpen) {
     OutlinedButton(enabled = enabled, onClick = {
         settings.chooseImport { importLauncher.launch(arrayOf("application/json")) }
     }) { Text(stringResource(R.string.settings_import)) }
     OutlinedButton(enabled = enabled, onClick = { settings.previewContext(today) }) {
         Text(stringResource(if (settings.preparingContext) R.string.settings_context_loading else R.string.settings_context_preview))
+    }
     }
     if (settings.importing) Text(stringResource(R.string.settings_importing))
     OutlinedTextField(

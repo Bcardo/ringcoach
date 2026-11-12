@@ -60,6 +60,8 @@ class PhotoMealStoreTest {
             store.save(draft)
             val pending = store.nextPendingNutrition()
             for (table in listOf("meal_revisions", "photo_meals", "nutrition_reconciliation")) store.writableDatabase.execSQL("DROP TABLE $table")
+            store.writableDatabase.execSQL("DROP TABLE progress_submissions")
+            store.writableDatabase.execSQL("ALTER TABLE nutrition_extractions DROP COLUMN unified")
             store.writableDatabase.version = 8
             store.close(); store = JournalStore(context, name)
             assertEquals(draft, store.readAll().single().draft)

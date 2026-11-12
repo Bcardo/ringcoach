@@ -16,14 +16,14 @@ import androidx.compose.ui.unit.dp
 import java.time.LocalDate
 
 @Composable
-internal fun WorkoutScreen(workouts: WorkoutViewModel, today: LocalDate) {
+internal fun WorkoutScreen(workouts: WorkoutViewModel, today: LocalDate, readOnly: Boolean = false) {
     Text(stringResource(R.string.workout_help))
     if (workouts.syncing) Text(stringResource(R.string.workout_syncing))
     if (workouts.needsKey) Text(stringResource(R.string.workout_key_needed))
     workouts.notice?.let { Text(stringResource(it)) }
     if (workouts.statuses.any { it.getString("status") != "complete" }) {
         Text(stringResource(R.string.workout_pending))
-        OutlinedButton(enabled = !workouts.syncing, onClick = { workouts.sync(today, retryFailed = true) }) {
+        if (!readOnly) OutlinedButton(enabled = !workouts.syncing, onClick = { workouts.sync(today, retryFailed = true) }) {
             Text(stringResource(R.string.workout_retry))
         }
     }

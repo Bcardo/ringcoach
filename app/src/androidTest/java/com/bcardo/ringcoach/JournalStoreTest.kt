@@ -247,6 +247,7 @@ class JournalStoreTest {
     }
 
     private fun removeExerciseNumbers() {
+        store.writableDatabase.execSQL("DROP TABLE progress_submissions")
         store.writableDatabase.execSQL("DROP TABLE meal_revisions")
         store.writableDatabase.execSQL("DROP TABLE photo_meals")
         store.writableDatabase.execSQL("DROP TABLE nutrition_reconciliation")

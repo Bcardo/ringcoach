@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.util.UUID
 
 internal class JournalViewModel(application: Application, private val state: SavedStateHandle) :
     AndroidViewModel(application) {
@@ -44,7 +45,10 @@ internal class JournalViewModel(application: Application, private val state: Sav
         private set
 
     val hasChanges: Boolean
-        get() = draft != (entries.firstOrNull { it.draft.date == draft.date }?.draft ?: JournalDraft(draft.date))
+        get() = draft.hasContent
+
+    var submissionId: String = state.get<String>("progress_id") ?: UUID.randomUUID().toString()
+        private set
 
     init {
         reload()
@@ -57,9 +61,7 @@ internal class JournalViewModel(application: Application, private val state: Sav
         viewModelScope.launch {
             try {
                 entries = withContext(Dispatchers.IO) { store.readAll() }
-                if (!keepDraft) {
-                    updateDraft(entries.firstOrNull { it.draft.date == draft.date }?.draft ?: draft)
-                }
+                if (!keepDraft) updateDraft(JournalDraft(draft.date))
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: Exception) {
@@ -72,11 +74,13 @@ internal class JournalViewModel(application: Application, private val state: Sav
 
     fun updateDraft(value: JournalDraft) {
         if (saving) return
+        if (value != draft) submissionId = UUID.randomUUID().toString()
         draft = value
         state["journal_date"] = value.date.toString()
         state["journal_training"] = value.training
         state["journal_diet"] = value.diet
         state["journal_additional"] = value.additional
+        state["progress_id"] = submissionId
         notice = null
     }
 
@@ -92,7 +96,8 @@ internal class JournalViewModel(application: Application, private val state: Sav
     }
 
     private fun selectDay(date: LocalDate) {
-        updateDraft(entries.firstOrNull { it.draft.date == date }?.draft ?: JournalDraft(date))
+        submissionId = UUID.randomUUID().toString()
+        updateDraft(JournalDraft(date))
     }
 
     fun discardAndOpen() {
@@ -106,7 +111,8 @@ internal class JournalViewModel(application: Application, private val state: Sav
 
     fun acceptSaved(entry: JournalEntry) {
         entries = (entries.filterNot { it.draft.date == entry.draft.date } + entry).sortedByDescending { it.draft.date }
-        updateDraft(entry.draft)
+        submissionId = UUID.randomUUID().toString()
+        updateDraft(JournalDraft(entry.draft.date))
         notice = R.string.journal_saved
     }
 

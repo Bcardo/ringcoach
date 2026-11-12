@@ -27,6 +27,8 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
         private set
     var syncing by mutableStateOf(false)
         private set
+    var loaded by mutableStateOf(false)
+        private set
     var needsKey by mutableStateOf(false)
         private set
     var notice by mutableStateOf<Int?>(null)
@@ -52,6 +54,7 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
                     baselines = context.exercises
                     records = context.workoutRecords
                     statuses = context.workoutStatuses
+                    loaded = true
                 } while (requested)
             } catch (exception: CancellationException) {
                 throw exception
