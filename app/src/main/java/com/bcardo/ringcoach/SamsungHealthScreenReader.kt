@@ -172,6 +172,13 @@ class SamsungHealthScreenReader : AccessibilityService() {
     companion object {
         private var instance: SamsungHealthScreenReader? = null
         val enabled: Boolean get() = instance != null
+        fun configured(context: android.content.Context): Boolean {
+            val services = android.provider.Settings.Secure.getString(context.contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES).orEmpty()
+            return services.split(':').any { android.content.ComponentName.unflattenFromString(it)?.let { component ->
+                component.packageName == context.packageName && component.className == SamsungHealthScreenReader::class.java.name
+            } == true }
+        }
         suspend fun capture(): Boolean {
             val reader = instance ?: return false
             val preferences = reader.getSharedPreferences("nightly-screen", MODE_PRIVATE)

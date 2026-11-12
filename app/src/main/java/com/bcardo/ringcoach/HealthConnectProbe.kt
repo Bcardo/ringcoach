@@ -69,6 +69,7 @@ internal class HealthConnectProbe(private val client: HealthConnectClient) {
             granted: Set<String>,
             range: TimeRangeFilter,
             exportWindow: ExportWindow? = null,
+            coaching: Boolean = false,
         ): MetricResult {
             if (!isSupported(client)) return MetricResult(kind, samplesLabel, ProbeStatus.UNSUPPORTED)
             if (permission !in granted) return MetricResult(kind, samplesLabel, ProbeStatus.NO_PERMISSION)
@@ -81,13 +82,21 @@ internal class HealthConnectProbe(private val client: HealthConnectClient) {
                 val sources = linkedMapOf<ProbeSource, Int>()
                 val exportRecords = mutableListOf<JSONObject>()
                 var pageToken: String? = null
+                val seenTokens = mutableSetOf<String>()
                 do {
                     val page = client.readRecords(ReadRecordsRequest(type, range, pageToken = pageToken))
                     for (record in page.records) {
                         val (start, end) = bounds(record)
                         if (exportWindow != null) {
-                            if (start < exportWindow.start || start >= exportWindow.end || end > exportWindow.end) continue
-                            exportRecords += encode(record)
+                            if (coaching) {
+                                if (start >= exportWindow.end || end < exportWindow.start) continue
+                            } else if (start < exportWindow.start || start >= exportWindow.end || end > exportWindow.end) continue
+                            val encoded = encode(record)
+                            if (coaching) encoded.put("source_record_id", record.metadata.id)
+                                .put("source_last_modified", record.metadata.lastModifiedTime.toString())
+                                .put("source_device_manufacturer", record.metadata.device?.manufacturer ?: JSONObject.NULL)
+                                .put("source_device_model", record.metadata.device?.model ?: JSONObject.NULL)
+                            exportRecords += encoded
                         }
                         earliest = minOf(earliest, start)
                         latest = maxOf(latest, end)
@@ -96,7 +105,8 @@ internal class HealthConnectProbe(private val client: HealthConnectClient) {
                         val source = ProbeSource(record.metadata.dataOrigin.packageName, record.metadata.device)
                         sources[source] = (sources[source] ?: 0) + 1
                     }
-                    pageToken = page.pageToken
+                    pageToken = page.pageToken?.takeIf { it.isNotEmpty() }
+                    check(pageToken == null || seenTokens.add(pageToken)) { "Repeated Health Connect page token" }
                 } while (pageToken != null)
 
                 if (count == 0) {
@@ -170,8 +180,9 @@ internal class HealthConnectProbe(private val client: HealthConnectClient) {
         val window = recentWindow(minOf(Instant.now(), date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant()))
         val range = TimeRangeFilter.between(window.start, window.end)
         val granted = client.permissionController.getGrantedPermissions()
-        val results = metrics.map { it.read(client, granted, range, window) }
+        val results = metrics.map { it.read(client, granted, range, window, coaching = true) }
         return CoachingTelemetry.summarize(window, results, ZoneId.systemDefault())
+            .put("current_night", CurrentNightEvidence.build(date, window, results, ZoneId.systemDefault()))
     }
 
     private fun recentWindow(end: Instant = Instant.now()): ExportWindow {

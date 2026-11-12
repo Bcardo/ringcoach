@@ -43,16 +43,18 @@ internal object CoachingTelemetry {
                             .put("source_device_type", session.get("source_device_type"))
                     }))
                     MetricKind.HEART_RATE -> {
-                        metric.put("beats_per_minute", stats(series(result.exportRecords, "samples", "beats_per_minute")))
+                        metric.put("beats_per_minute", stats(series(result.exportRecords, "samples", "beats_per_minute", window)))
                             .put("scope", "returned_samples_across_window")
                             .put("is_vendor_resting_heart_rate", false)
                     }
                     MetricKind.HRV -> {
-                        metric.put("rmssd_milliseconds", stats(result.exportRecords.map { it.getDouble("rmssd_milliseconds") }))
+                        metric.put("rmssd_milliseconds", stats(result.exportRecords.filter {
+                            Instant.parse(it.getString("time")) >= window.start && Instant.parse(it.getString("time")) < window.end
+                        }.map { it.getDouble("rmssd_milliseconds") }))
                             .put("baseline_status", "not_computed").put("zscore", JSONObject.NULL)
                     }
                     MetricKind.SKIN_TEMPERATURE -> {
-                        metric.put("delta_celsius", stats(series(result.exportRecords, "deltas", "delta_celsius")))
+                        metric.put("delta_celsius", stats(series(result.exportRecords, "deltas", "delta_celsius", window)))
                             .put("records_with_baseline", result.exportRecords.count { !it.isNull("baseline_celsius") })
                     }
                 }
@@ -63,10 +65,12 @@ internal object CoachingTelemetry {
             .put("timezone", zone.id).put("metrics", metrics)
     }
 
-    private fun series(records: List<JSONObject>, collection: String, field: String): List<Double> {
+    private fun series(records: List<JSONObject>, collection: String, field: String, window: ExportWindow): List<Double> {
         return records.flatMap { record ->
             val samples = record.getJSONArray(collection)
-            (0 until samples.length()).map { samples.getJSONObject(it).getDouble(field) }
+            (0 until samples.length()).map { samples.getJSONObject(it) }.filter {
+                Instant.parse(it.getString("time")) >= window.start && Instant.parse(it.getString("time")) < window.end
+            }.map { it.getDouble(field) }
         }
     }
 

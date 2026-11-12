@@ -21,6 +21,12 @@ internal fun NightlyRecoveryPanel(coach: CoachViewModel, date: LocalDate, setup:
         val hrv = today.filter { it.optString("metric") == "sleeping_hrv" }
         Text(if (energy.isEmpty()) "能量得分：尚未读取到今日数据" else "能量得分：" + energy.joinToString(" / ") { it.getDouble("value").toInt().toString() })
         Text(if (hrv.isEmpty()) "睡眠 HRV：尚未读取到今日数据" else "睡眠 HRV：" + hrv.joinToString(" / ") { "${it.getDouble("value")} ms" })
+        if (hrv.isEmpty()) {
+            val configured = SamsungHealthScreenReader.configured(LocalContext.current)
+            Text(if (!configured) "HRV 自动读取未启用；请在设置中开启辅助功能。" else if (!SamsungHealthScreenReader.enabled)
+                "HRV 读取服务尚未连接；今日数据尚未确认。" else "今日 HRV 尚未采集，旧记录不能代表今日。",
+                style = MaterialTheme.typography.bodySmall)
+        }
         if (coach.nightlySyncing) Text("正在同步昨夜数据…")
         if (setup) {
             Text("连接后定期读取最近七天能量得分；每次提交饮食或训练时同步，并与睡眠记录一起更新教练建议。")

@@ -1,5 +1,7 @@
 # RingCoach
 
+New advice includes an expandable data-coverage summary, with current-night sleep intervals and transient HR samples, prior 30-day archived recovery comparisons and explicit freshness/omission counts. Missing current-day HRV and disabled screen reading are visible. Saved advice retains sleep intervals and HR statistics, not HR sample streams. See [coaching evidence, request limits and retention](docs/coaching-request-context.md).
+
 Journal now extracts reported supplement events with dose/time unknowns, planned/taken/skipped/retracted status and source-linked corrections. Caloric supplements link to food facts so nutrition counts once. Each new submission enters a durable coaching queue and gets fresh feedback after recognition, including after restart and for historical dates. See [supplement intake and feedback behavior](docs/supplement-feedback.md) for retention, the seven-day model window and the saved-Settings standing-plan boundary.
 
 See the [recovery verification and data-flow audit](docs/data-flow-audit.md) for what is verified, what stays local, what reaches Qwen, and the remaining Bluetooth/reliability gaps.
