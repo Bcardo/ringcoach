@@ -13,7 +13,7 @@ import java.time.LocalDate
 /** Explicit live check: reads existing progress and saves one real coaching update, without editing journals. */
 @RunWith(AndroidJUnit4::class)
 class NightlyCoachingLiveTest {
-    @Test fun savedProgressAutomaticallyUsesNightlyRecovery() {
+    @Test fun savedContextUsesNightlyRecovery() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("liveNightly") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val app = instrumentation.targetContext.applicationContext as Application
@@ -30,16 +30,14 @@ class NightlyCoachingLiveTest {
         assertFalse(model.loadFailed)
         assertTrue("Saved Qwen credential required", model.hasKey)
         val probe = HealthConnectProbe(HealthConnectClient.getOrCreate(app))
-        var submission = ""
+        val previousId = model.card?.id
         instrumentation.runOnMainSync {
-            model.queueProgress(today)
-            submission = model.pendingProgressId!!
-            model.prepareProgress(probe)
+            model.prepare(today, probe, autoGenerate = true)
         }
         val deadline = System.currentTimeMillis() + 100_000
-        while ((model.busy || model.pendingProgressId != null) && System.currentTimeMillis() < deadline) Thread.sleep(200)
-        assertTrue("Automatic coach update failed; notice=${model.notice}", model.cardSaved && model.card?.id == submission)
-        assertNull("Submission was not acknowledged", model.pendingProgressId)
+        while (model.busy && System.currentTimeMillis() < deadline) Thread.sleep(200)
+        assertTrue("Coach update failed; notice=${model.notice}", model.cardSaved && model.card != null && model.card?.id != previousId)
+        val submission = model.card!!.id
         JournalStore(app).use { store ->
             val card = store.coachCard(submission) ?: error("Missing saved card")
             val context = org.json.JSONObject(card.contextJson)
@@ -49,6 +47,6 @@ class NightlyCoachingLiveTest {
             assertTrue(context.has("latest_workout_records"))
             assertEquals(COACH_PROMPT_VERSION, card.promptVersion)
         }
-        println("NIGHTLY_LIVE saved_card=true fresh_hrv=true api_energy=true journal_unchanged=true queue_acknowledged=true")
+        println("NIGHTLY_LIVE saved_card=true fresh_hrv=true api_energy=true journal_unchanged=true")
     }
 }

@@ -32,7 +32,7 @@ internal data class CoachingSettings(
 }
 
 internal class JournalStore(context: Context, name: String = "ringcoach.db") :
-    SQLiteOpenHelper(context.applicationContext, name, null, 11) {
+    SQLiteOpenHelper(context.applicationContext, name, null, 12) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createJournalTable(db)
@@ -44,6 +44,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         PhotoMealStore.createTables(db)
         createProgressTable(db)
         IncrementalNutritionStore.createTables(db)
+        ProgressCoachingStore.createTable(db)
     }
 
     private fun createProgressTable(db: SQLiteDatabase) {
@@ -161,7 +162,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        check(oldVersion in 1..10 && newVersion == 11) { "Unsupported database migration" }
+        check(oldVersion in 1..11 && newVersion == 12) { "Unsupported database migration" }
         // SQLiteOpenHelper runs the migration in a transaction.
         if (oldVersion == 1) {
             db.execSQL("ALTER TABLE journal_entries RENAME TO journal_entries_v1")
@@ -214,6 +215,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         if (oldVersion < 10) createProgressTable(db)
         IncrementalNutritionStore.createTables(db)
         IncrementalNutritionStore(db).migrateConfirmedPhotos()
+        if (oldVersion < 12) ProgressCoachingStore.migrate(db)
     }
 
     @Synchronized
@@ -365,7 +367,10 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             """, arrayOf(date.toString(), id, saved.draft.diet, source))
             db.execSQL("INSERT INTO progress_submissions VALUES (?, ?, ?, ?, ?)",
                 arrayOf(id, date.toString(), text.trim(), JSONArray(photoIds).toString(), stamp))
-            if (incremental) IncrementalNutritionStore(db).enqueue(id, date, saved.draft.diet, source)
+            if (incremental) {
+                IncrementalNutritionStore(db).enqueue(id, date, saved.draft.diet, source)
+                ProgressCoachingStore(db).enqueue(id)
+            }
             db.setTransactionSuccessful()
             return saved
         } finally { db.endTransaction() }
@@ -393,6 +398,24 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         val covered = latest?.let { JSONObject(it.contextJson).optJSONArray("nutrition_turn_ids") } ?: JSONArray()
         val ids = (0 until covered.length()).map { covered.getString(it) }.toSet()
         return incrementalSubmissionIds(date).any { it !in ids }
+    }
+
+    @Synchronized
+    fun nextPendingCoaching(): PendingCoaching? = ProgressCoachingStore(readableDatabase).next()
+
+    @Synchronized
+    fun progressSubmission(id: String): JSONObject? = readableDatabase.rawQuery(
+        "SELECT id,date,text,created_at FROM progress_submissions WHERE id=?", arrayOf(id)).use {
+        if (!it.moveToFirst()) null else JSONObject().put("id", it.getString(0)).put("date", it.getString(1))
+            .put("text", it.getString(2)).put("submitted_at", it.getString(3))
+    }
+
+    @Synchronized
+    fun readyCoachingContext(date: LocalDate, defaultInstructions: String): CoachingContext {
+        val context = readCoachingContext(date, defaultInstructions)
+        require(context.nutritionDays.none { it.status in setOf("pending", "failed") } &&
+            context.workoutStatuses.none { it.optString("status") != "complete" }) { "Progress extraction is incomplete" }
+        return context
     }
 
     @Synchronized

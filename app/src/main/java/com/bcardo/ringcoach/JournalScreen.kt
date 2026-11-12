@@ -81,7 +81,7 @@ internal fun JournalApp(
                         if (processing) Text("正在更新摄入、训练计划与教练建议…")
                         if (coach.pendingProgressId != null && !processing) Text("有进度等待更新，可在日志中查看处理状态。")
                         coach.card?.let {
-                            Text("最新教练建议", style = MaterialTheme.typography.titleLarge)
+                            Text(if (coach.pendingProgressId != null) "上次教练建议 · 新进度尚未完成反馈" else "最新教练建议", style = MaterialTheme.typography.titleLarge)
                             Text("更新于 ${coachCardTimestamp(it.createdAt)}", style = MaterialTheme.typography.bodySmall)
                             if (it.date != today) Text("这是 ${it.date} 的建议，今日尚未更新。")
                             it.advice.notes.forEach { note -> Text("• $note") }
@@ -93,7 +93,7 @@ internal fun JournalApp(
                         Text("完整动作计划与最新表现", style = MaterialTheme.typography.titleMedium)
                         WorkoutScreen(workouts, today, readOnly = true)
                         if (card != null) {
-                            Text("最新教练调整", style = MaterialTheme.typography.titleMedium)
+                            Text(if (coach.pendingProgressId != null) "上次教练调整 · 新进度尚未完成反馈" else "最新教练调整", style = MaterialTheme.typography.titleMedium)
                             Text("计划日期 ${card.date} · 更新于 ${coachCardTimestamp(card.createdAt)}", style = MaterialTheme.typography.bodySmall)
                             card.advice.training.forEach { Text("• $it") }
                         } else Text("提交进度后，教练会结合恢复状态更新训练安排。")
@@ -106,7 +106,7 @@ internal fun JournalApp(
                         JournalLoadState(journal)
                         ProgressComposer(journal, photos, enabled && !processing, today) {
                             photos.submitProgress(journal.submissionId, journal.draft, { entry ->
-                                journal.acceptSaved(entry); coach.queueProgress(today)
+                                journal.acceptSaved(entry); coach.queueProgress()
                             }) {
                                 workouts.sync(today, retryFailed = true); nutrition.sync(today, retryFailed = true)
                             }
@@ -126,7 +126,7 @@ internal fun JournalApp(
                             coach.notice?.let { Text(stringResource(it)) }
                             OutlinedButton(enabled = coach.hasKey, onClick = {
                                 workouts.sync(today, retryFailed = true); nutrition.sync(today, retryFailed = true)
-                                if (coach.pendingProgressId == null) coach.queueProgress(today) else coach.allowProgressRetry()
+                                if (coach.pendingProgressId == null) coach.queueProgress() else coach.allowProgressRetry()
                             }) { Text("重试更新") }
                         }
                     }
@@ -193,6 +193,7 @@ private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewM
                     Text("导入历史参考：${nutritionNumber(it.intakeKcal)} kcal · 蛋白质 ${nutritionNumber(it.proteinGrams)} g")
                 }
                 if (expanded) {
+                    nutrition.days.firstOrNull { it.date == date }?.result?.supplements?.forEach { Text(supplementSummary(it)) }
                     journal.entries.firstOrNull { it.draft.date == date }?.draft?.let {
                         val legacyTraining = it.training.substringBefore("[更新 ").trim()
                         if (legacyTraining.isNotBlank()) Text(legacyTraining)

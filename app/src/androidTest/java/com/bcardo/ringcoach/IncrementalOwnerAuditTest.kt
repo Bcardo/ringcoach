@@ -19,7 +19,7 @@ class IncrementalOwnerAuditTest {
             fun count(sql: String): Int = db.rawQuery(sql, null).use { it.moveToFirst(); it.getInt(0) }
             val retainedReleased = count("SELECT count(*) FROM photo_meals p JOIN photo_provenance s ON s.photo_id=p.id WHERE s.released_at IS NOT NULL AND length(p.photo_jpeg)>0")
             assertEquals(0, retainedReleased)
-            assertEquals(11, db.version)
+            assertEquals(12, db.version)
             assertTrue(count("SELECT count(*) FROM journal_entries") > 0)
             assertEquals(1, count("SELECT count(*) FROM coaching_settings"))
             var compared = 0

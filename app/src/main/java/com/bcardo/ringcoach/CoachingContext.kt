@@ -73,5 +73,12 @@ internal data class CoachingContext(
         .put("latest_workout_records", JSONArray(workoutRecords.map { it.toJson() }))
         .put("training_extraction_status", JSONArray(workoutStatuses))
         .put("daily_nutrition", JSONArray(nutritionDays.map { it.toJson() }))
+        .put("supplement_history", JSONObject()
+            .put("start_date", date.minusDays(6).toString()).put("end_date", date.toString())
+            .put("days", JSONArray(nutritionDays.map { day -> JSONObject().put("date", day.date.toString())
+                .put("status", day.status).put("events", JSONArray(day.result?.supplements?.map { it.toJson() } ?: emptyList<JSONObject>())) }))
+            .put("standing_plan_source", "user_saved_settings_only")
+            .put("standing_plan", JSONObject().put("diet_plan", settings.diet).put("routine", settings.routine)
+                .put("instructions", settings.instructions)))
         .put("telemetry_status", "not_loaded")
 }
