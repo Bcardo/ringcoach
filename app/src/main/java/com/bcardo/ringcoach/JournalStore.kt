@@ -713,6 +713,14 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     @Synchronized
+    fun coachCardSummariesForDate(date: LocalDate): List<CoachCardSummary> = readableDatabase.rawQuery(
+        "SELECT id,date,created_at,model,prompt_version FROM coach_cards WHERE date=? ORDER BY created_at DESC,id DESC",
+        arrayOf(date.toString())).use { cursor ->
+        buildList { while (cursor.moveToNext()) add(CoachCardSummary(cursor.getString(0), LocalDate.parse(cursor.getString(1)),
+            Instant.ofEpochMilli(cursor.getLong(2)), cursor.getString(3), cursor.getString(4))) }
+    }
+
+    @Synchronized
     fun coachCard(id: String): SavedCoachCard? {
         return readableDatabase.rawQuery(
             "SELECT id, date, created_at, model, prompt_version, context_json, advice_json FROM coach_cards WHERE id = ?",

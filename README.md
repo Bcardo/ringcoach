@@ -113,13 +113,21 @@ History groups journal text, recent nutrition and archived advice by date. Openi
 
 ### Daily recovery archive (first slice)
 
-Energy Score and Samsung's daily sleeping HRV accumulate in private `nightly-recovery.db` (schema 2); refreshing the current seven-day source window does not remove older archived dates. Existing schema-1 readings migrate in place. No additional permission or manual archive action is needed. This slice adds storage/query support, without new screens or broader coaching context.
+Energy Score and Samsung's daily sleeping HRV accumulate in private `nightly-recovery.db` (schema 2); refreshing the current seven-day source window does not remove older archived dates. Existing schema-1 readings migrate in place. No additional permission or manual archive action is needed.
 
 Each observation retains its wake date, units, source record ID, metric definition, first observation and last verification times. Repeated identical reads update verification time; corrected values/metadata, confirmed source deletions and restorations leave an audit trail. An unreadable or failed capture preserves earlier readings. Only a complete successful source read can mark absent records missing; removed records remain in the revision audit rather than active history.
 
 `NightlyRecoveryStore.history(start, end)` returns every date in an inclusive window of up to 366 days, with one canonical value per metric and all source observations. This is a query limit, not a retention limit. Energy Score prefers SDK precision and falls back to the screen; sleeping HRV uses Samsung's daily screen value. Conflicting preferred-source readings yield an explicit ambiguous/null result rather than an average. Missing dates distinguish `not_checked` from `confirmed_missing`; neither is zero. Per-source coverage and the latest sync attempt are separate from a reading's verification time. `revisions(date, metric)` exposes the correction trail.
 
-The archive only contains locally observed data. It cannot recover HRV missed outside the reader's seven-day catch-up window. Charts, sleep/HR summaries, backup and expanded historical coaching remain separate work. This archive stores no meal photos or detailed heart-rate traces.
+The archive only contains locally observed data. It cannot recover HRV missed outside the reader's seven-day catch-up window. Sleep/HR summaries, backup and expanded historical coaching remain separate work. This archive stores no meal photos or detailed heart-rate traces.
+
+### View recovery history on the phone
+
+Open **RingCoach → 历史 → 恢复趋势**. Select **近 7 天** or **近 30 天** to see Energy Score and sleeping HRV by wake date, with units, the latest observed value/date and valid-day counts. Missing/uncollected/conflicting days remain gaps, not zeros. Lines stop at gaps and source/definition changes. The two charts stack on the cover display and sit side by side when enough width is available.
+
+Tap a chart date or use **查看日期** (scroll below the charts on the cover display). The date detail shows source readings, precision, archive version and last verification time; that date's journal and all saved coaching advice appear first below it. Source-read failures show a warning while preserving archived values. Older readings are labeled with their actual date. Today’s unverified archived reading is explicitly marked. Range/date choices survive activity recreation, and the view reloads after a foreground recovery refresh completes.
+
+This is an Android screen in the installed development build, not a web dashboard. Opening history, changing ranges and inspecting saved advice do not trigger an LLM request. No new navigation tab or meal-entry control is added. The coaching payload still uses its existing seven-day window.
 
 ## Validation
 
