@@ -61,10 +61,18 @@ import java.time.format.FormatStyle
 
 class MainActivity : ComponentActivity() {
     private var today by mutableStateOf(LocalDate.now())
+    private var lastForegroundSync = 0L
 
     override fun onResume() {
         super.onResume()
-        today = LocalDate.now()
+        val newDate = LocalDate.now()
+        val changedDate = newDate != today
+        today = newDate
+        val elapsed = android.os.SystemClock.elapsedRealtime()
+        if (changedDate || elapsed - lastForegroundSync > 300_000) {
+            lastForegroundSync = elapsed
+            ViewModelProvider(this)[CoachViewModel::class.java].refreshNightly(readScreen = true)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,6 +92,9 @@ class MainActivity : ComponentActivity() {
         val journal = ViewModelProvider(this)[JournalViewModel::class.java]
         val settings = ViewModelProvider(this)[SettingsViewModel::class.java]
         val coach = ViewModelProvider(this)[CoachViewModel::class.java]
+        NightlySyncJob.schedule(this)
+        lastForegroundSync = android.os.SystemClock.elapsedRealtime()
+        coach.refreshNightly(readScreen = true)
         val workouts = ViewModelProvider(this)[WorkoutViewModel::class.java]
         val coachHistory = ViewModelProvider(this)[CoachHistoryViewModel::class.java]
         val nutrition = ViewModelProvider(this)[NutritionViewModel::class.java]

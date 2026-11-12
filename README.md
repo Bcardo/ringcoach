@@ -2,82 +2,118 @@
 
 Native Android prototype for checking Health Connect coverage on the Galaxy Z Fold7, exporting a reviewed telemetry sample, and analyzing it on Windows.
 
-## Daily journal
+Nightly recovery is now integrated with progress submissions: Energy Score refreshes through Samsung Health's SDK, and an explicitly enabled Samsung Health screen reader captures exact daily sleeping HRV. The app catches up recent nights when opened or when food/training is submitted, then automatically saves updated coaching advice after recognition finishes. See [nightly recovery setup, behavior, and validation](docs/nightly-recovery.md), including the distinction between background Energy Score polling and foreground HRV capture. The build requires the owner-downloaded Samsung SDK AAR described in [app/libs/README.md](app/libs/README.md).
 
-The Chinese app has five tabs.
+## Set up nightly recovery on the phone
 
-- **今日** opens today's saved journal or starts a new entry.
-- **训练** displays a read-only progress table grouped by training day. Daily training input updates the latest completed performance automatically.
-- **日志** automatically uses today's date and provides separate **训练**, **饮食**, and **其他记录** fields. Home refreshes the current date when the app resumes.
-- **历史** lists saved days in descending date order. Tap **查看与编辑** to reopen one.
-- Within **历史**, **教练卡历史** lists saved recommendations separately, newest first. Multiple generations on the same day remain separate. Open a card to read its original advice, model/prompt version, and archived input snapshot without another model request. The list loads 20 summaries at a time; full inputs load only when opening a card.
-- **教练** prepares a reviewed context and generates a saved Qwen coaching card.
+The Fold7 owner completed the Samsung SDK read-mode agreement, Energy Score read grant, and HRV accessibility setup on November 11, 2026. These permissions do not need to be granted for each meal or workout. Battery exemptions were not configured as part of that validation; the recommendations below are separate.
 
-The **数据** button on Home opens Health Connect permissions, coverage, preview, and JSON export.
+### How refresh works
 
-Journal entries save offline in the app-private SQLite database `ringcoach.db`, with one entry per date. Repeated saves update that day's entry. Existing days can be reopened from history, with a warning before replacing an unsaved draft. Draft fields survive screen navigation and activity recreation. Entries from the earlier layout migrate into **其他记录**, preserving the original notes, readiness, and discomfort text. The journal stores the text you enter for later use by the coaching feature.
+| Trigger | What RingCoach does |
+| --- | --- |
+| In the background | An Android job requests Energy Score about every six hours, with a one-hour scheduling flex. Android may delay execution during idle/power-saving conditions. This job does not open Samsung Health, capture HRV, or call Qwen. |
+| Open RingCoach | Refreshes Energy Score and, if the accessibility reader is enabled, catches up the last seven calendar days of daily HRV/score summaries. Returning to an already-open app also refreshes after five minutes away or when the date changes. |
+| Submit progress with **提交更新** | Saves the inputs, waits for unified nutrition and workout recognition, refreshes recovery and Health Connect context, then automatically generates and saves a coach card with the saved Qwen key. |
+| Settings → **刷新恢复数据** | Requests a health-data refresh without generating a coach card. The same HRV cache policy applies. |
 
-## Routine, diet, and coaching settings
+HRV capture needs the phone unlocked. Samsung Health briefly appears while RingCoach checks the date and reads each day's summary, then RingCoach returns to the foreground. A capture has an approximately 25-second timeout. Leave the screen unlocked and allow this navigation to finish. A successful capture containing today's HRV is reused for up to one hour, including when the refresh button is pressed. If today's HRV was missing, the reader can try again on the next refresh.
 
-From **今日**, tap **设置**. Enter a reusable **基础训练计划**, **基础饮食计划**, and **教练指令**, then tap **保存设置**. The initial coaching instructions come from [prompts/coaching-policy.md](prompts/coaching-policy.md), packaged with the app. You can edit the default RPE cap and other instructions in the field.
+Energy Score can refresh while RingCoach is closed. HRV catch-up happens when RingCoach is opened or progress is submitted; the app does not unlock the phone or run the HRV screen workflow unattended while it is locked. Open RingCoach at least once within each seven-day window to collect the nights available to this reader. The app does not need to stay open overnight.
 
-Settings save offline in `ringcoach.db` and persist when the app restarts. Unsaved fields survive navigation and activity recreation. Opening and saving these fields makes no model request. Coach cards use these saved plans and instructions with the reviewed daily journal and available telemetry.
+### One-time required setup
 
-Use **导入设置 JSON** to load a local settings file, review the replacement, and save it. Schema version 1 contains `routine`, `diet`, and `instructions` strings. Version 2 adds `snapshot_date`, `nutrition_history`, and `exercise_baselines`. Imports are limited to 128 KiB. Settings and reference records save in a single transaction. Repeating an import updates the same reference keys.
+Menu names can vary with One UI/Samsung Health versions; use the phone's Settings search if a path differs.
 
-**检查教练上下文** reads saved settings, seven calendar days of journal and nutrition history, and the latest applicable exercise-baseline snapshot from SQLite. The preview identifies imported nutrition as user-provided estimates and exercise baselines as references. It reports health telemetry as not loaded until the coaching request adds it. Coaching output can summarize the retrieved context without repeating fixed tracking tables.
+1. **Keep the normal Ring connection working.** Pair the Ring through Galaxy Wearable, keep Bluetooth enabled, and allow the usual Galaxy Wearable/Galaxy Ring Manager device permissions. Wear a sufficiently charged Ring during sleep and let it sync with the phone normally. RingCoach reads the resulting Samsung Health data; it does not replace the existing Ring pairing. If Samsung Health itself has no new sleep session or Energy Score, reconnect/sync there first.
+2. **Enable Samsung Health SDK read mode for this development build.** Open Samsung Health → Settings → About Samsung Health. If needed, tap the version line quickly at least ten times to reveal the developer buttons. Choose **Developer mode (Samsung Health Data SDK)**, review Samsung's agreement, and enable developer mode/data reading. Choose the Data SDK button, not the older “Samsung Health SDK for Android” button. No write-access code is needed for Energy Score reading. This is development/testing mode; a distributed release requires Samsung partner registration. [Samsung's developer-mode instructions](https://developer.samsung.com/health/data/guide/developer-mode.html)
+3. **Grant RingCoach Energy Score read access.** In RingCoach → Settings → **账号与健康连接**, tap **连接三星健康**, enable **能量得分** in Samsung's permission dialog, and finish. This integration requests read access only. If permission is later revoked, reconnect through this button.
+4. **Enable exact sleeping HRV capture.** In RingCoach Settings → **账号与健康连接**, tap **启用睡眠 HRV 自动读取**, or open Android Settings → Accessibility → Installed apps. Enable **RingCoach 睡眠 HRV 读取** after reviewing its permission description. This is the one-time permission that lets the app read Samsung Health's daily HRV screen. The reader handles Samsung Health screens only during a RingCoach-initiated capture. Keep Samsung Health in the tested Simplified Chinese layout for the current adapter; a different locale or changed Samsung layout may require an adapter update.
+5. **Keep Health Connect sleep and heart-rate permissions enabled.** Allow Samsung Health to write Sleep and Heart rate to Health Connect. In Settings → **Health Connect · 连接与诊断**, use **授权读取** and allow Sleep and Heart rate reads. These supply sleep sessions/stages and heart-rate context. HRV and skin-temperature read grants are optional for the Health Connect probe; granting them does not make Samsung export those records or replace the exact-HRV screen reader.
+6. **Save the Qwen key for automatic advice.** In RingCoach Settings → **账号与健康连接**, save the Qianwen key and your routine, diet, and coaching instructions. A network connection is needed for meal/workout recognition and coaching. Reading already-available recovery summaries does not itself make a Qwen request. Without a saved key, progress remains saved and automatic coaching waits for configuration.
+7. **Open RingCoach and verify the result.** Keep the phone unlocked while the first capture runs. Home should show today's Energy Score and sleeping HRV, using the same date and HRV value as Samsung Health. On the validated test day it showed score 82 and HRV 62 ms; those are historical test values, not expected values for every day.
 
-Personal adaptations belong in the ignored `private/` folder or another local location. Only generic prompt templates are packaged in the APK.
+Samsung Health's [SDK data-type list](https://developer.samsung.com/health/data/guide/features/data-types.html) includes Energy Score but does not expose the daily sleeping HRV component. That is why the two read paths need separate permissions. Neither USB debugging, a PC connection, a personal-data export, nor a Bluetooth HCI snoop log is required for this implemented daily workflow. HCI logging used during research can be turned off.
 
-The database upgrade supports earlier schemas through version 8. On-device tests verify that settings edits preserve journal entries, stored custom prompts and coach cards survive upgrades, seven-day context queries respect dates, and failed imports roll back all changes.
+### Battery settings: recommended for reliability
 
-The debug build and Android unit tests passed, along with 14 on-device database and credential tests. The Settings screen, local import flow, and read-only Training tab were verified on the Fold7's outer display.
+Keep the phone's general battery optimization/Adaptive Battery settings enabled. Use app-specific exceptions for the apps whose background work matters.
 
-Database instrumentation tests use separate temporary databases. Build with `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest`, then install both APKs with `adb install -r` (add `-t` for the test APK) and run the following.
+1. Open **Android Settings → Apps → RingCoach → Battery → Unrestricted**. This is recommended for the background Energy Score job and service reliability. It is not a prerequisite for reading while RingCoach is in the foreground.
+2. Open **Settings → Battery → Background usage limits** (on some versions, under Battery and device care → Battery). Remove RingCoach from **Sleeping apps** and **Deep sleeping apps** if listed. Add it to **Never sleeping apps / Never auto sleeping apps** if that option is available. Some versions do not offer apps already marked Unrestricted in this list; use the controls the phone provides.
+3. Keep **Samsung Health**, **Galaxy Wearable**, and **Galaxy Ring Manager** out of **Deep sleeping apps** so the source data can sync normally. If Ring-to-Samsung-Health sync is delayed, consider adding the affected app to Never auto sleeping apps or setting its battery mode to Unrestricted as well. There is no need to change unrelated apps.
+4. Avoid **Force stop** for these apps when relying on automatic refresh. After force-stopping RingCoach, reopen it. After a phone restart, unlock the phone and open RingCoach once to confirm the connection and HRV service are available.
+5. Power saving and Android idle scheduling can still delay background work. Unrestricted mode does not guarantee an exact six-hour refresh time and does not enable locked-phone HRV capture. Opening RingCoach or submitting progress provides a foreground refresh opportunity.
 
-```powershell
-adb shell am instrument -w -e class com.bcardo.ringcoach.JournalStoreTest com.bcardo.ringcoach.test/androidx.test.runner.AndroidJUnitRunner
-```
+These exceptions may increase background battery use; battery impact has not been measured. If you mainly use RingCoach when submitting progress and want to minimize background activity, foreground catch-up can still be used with normal optimization. The key requirement for HRV remains an enabled accessibility reader and an unlocked foreground capture.
 
-Use the same debug signing key for app updates. The first attempt to run this task through Gradle's connected-device test runner failed on a signing-key mismatch, and its cleanup removed the debug app. The app was restored with the original user debug key. Three database tests passed through direct instrumentation, including migration from the earlier journal layout. The owner restored Health Connect read access, and the Data screen returned coverage again. Home, the three-field journal, empty history, and Data navigation were visually checked on the Fold7's outer display.
+References: [Samsung background/sleeping-app settings](https://www.samsung.com/ca/support/mobile-devices/galaxy-phone-sleeping-apps/), [Samsung battery optimization](https://www.samsung.com/us/support/galaxy-battery/optimization/), [Android job power-management limits](https://developer.android.com/topic/performance/power/power-details).
 
-## Automatic training progress
+### Normal daily use and troubleshooting
 
-Exercises retain the source plan's order with a stable number within each training day, stored in SQLite and included in model context. For example, a daily entry can refer to `Day 1, exercise 2`. A number without an identifiable training day requires clarification. Upgrading an existing import recovers its original insertion order without reimporting personal data.
+1. Wear the Ring overnight and let Samsung Health sync normally.
+2. When logging food or training, unlock the phone, open RingCoach, enter the progress, and tap **提交更新**. You do not need to type the score or HRV, export a file, or manually request a separate coach card.
+3. Allow any Samsung Health capture navigation to finish, then keep RingCoach open until recognition and the coach update finish. The meal/workout analysis and coaching request are foreground app work; saving the journal does not guarantee the network requests will finish if the app is closed immediately. Saved inputs and a pending coach update survive a later restart.
+4. Read the latest advice on Home or reopen the archived advice under its date in History. For a failed update, use **日志 → 重试更新**. Re-entering the original meal or workout is unnecessary.
 
-Enter the completed workout in the daily **训练** field and save. The original text saves to SQLite first. With a saved Qianwen key, the app automatically sends the training text and known exercise names to Qwen3.8-Flash for extraction. It stores the recognized exercise, exact performance text, source evidence, and completion status in SQLite. The read-only **训练** tab displays each exercise's latest completed or partially completed performance and date. Exercises without a recognized completion show the imported reference, clearly labeled with its date.
+| Symptom | Check/action |
+| --- | --- |
+| Samsung Health also lacks today's sleep/score/HRV | Check Ring battery, Bluetooth, Galaxy Wearable connection, and source sync. RingCoach cannot fetch a summary Samsung Health has not produced yet. |
+| Energy Score works but HRV is missing | Verify **RingCoach 睡眠 HRV 读取** is still enabled, unlock the phone, and use RingCoach Settings → **刷新恢复数据**. Let Samsung Health navigation finish. Check the tested language/layout if the problem followed a Samsung Health update. |
+| HRV looks unchanged after a same-day correction | A successful current-day capture can be reused for one hour. The current refresh button does not bypass that cache; retry after expiry. |
+| Score is missing even though Samsung Health shows it | Recheck Data SDK developer read mode and the Energy Score grant through **连接三星健康**. These may need attention after reinstalling or resetting Samsung Health. |
+| Background score refresh is late | Check app battery restrictions, sleeping/deep-sleeping lists, Power saving, and whether the app was force-stopped. The schedule is inexact; foreground refresh is available. |
+| Advice did not update | Check the saved Qwen key, network connection, and recognition status. Reopen RingCoach and use **日志 → 重试更新** if shown. The latest saved advice remains available. |
+| App was unused for more than seven days | The reader catches up only its current seven-day window. Older missed HRV is not backfilled by this implementation. |
 
-Future plans do not replace completed performance. Units, per-side loads, assistance, and rep notation stay as entered. Ambiguous passages remain visible for clarification in the journal. Editing training invalidates its old extraction; a late reply cannot replace a newer revision. Diet-only edits preserve recognized training. Pending work resumes when the app opens or changes tabs. Failed requests preserve the original text and provide a retry button; extraction requires a network connection and does not run as a background service while the app is closed.
+Update the existing RingCoach installation with the same signing key to preserve local history. If you uninstall/reset the app or Samsung Health, repeat the relevant setup and permission steps. Turning off the HRV accessibility service stops automatic screen capture; SDK Energy Score reads can continue if their permission remains granted.
 
-An opt-in live phone test used synthetic training to verify recognition, exclusion of tomorrow's planned weight, and persistence in a disposable database. No synthetic workout was added to the owner's journal.
+## Four tabs, one purpose each
 
-## Automatic nutrition progress
+| Tab | Purpose | Available actions |
+| --- | --- | --- |
+| **今日** | Current intake, applicable daily intake guidance, recovery and latest coach recommendation | Display only; one shared Settings entry in the header |
+| **训练** | Full saved routine and exercise plan with latest performance, plus dated coach adjustments | Read only; no food input or hidden plan table |
+| **日志** | Submit a dated progress update | One text box, optional camera/gallery attachments, **提交更新**; contextual retry only if processing fails |
+| **历史** | Review saved days and the advice generated for them | Expand a date, open its saved advice, load earlier advice |
 
-Enter only today's intake in the journal's **饮食** field; **其他记录** can include today's reported weight or expenditure. Saving the raw journal queues recognition automatically with the saved Qwen key. Each day is retained in SQLite, so the owner never needs to re-enter seven days of history or provide extraction results. Home's **近 7 日饮食进度** reads seven calendar days from that database.
+The old Coach tab, Home redirects, Training food-entry button, separate text-meal creation, consumed checkbox, meal refresh/list/editor and manual text/photo overlap choices are removed from normal navigation. Settings is available from the header of every tab. **账号与健康连接** contains the key and Samsung permissions; **高级 · 导入与上下文检查** contains import and context preview. **Health Connect · 连接与诊断** contains Health Connect permission, coverage and export tools.
 
-The nutrition request contains only the dated diet and other notes. Directly reported numbers and food-based estimates retain source evidence and distinct labels; `≈` marks estimates. Meal subtotals remain separate from explicitly reported full-day totals. Planned food is excluded, unknown values remain null, and weight/expenditure are not invented. Intake minus expenditure is calculated locally when both are present; partial-day intake cannot be treated as a daily deficit. No expenditure report is required to save intake.
+## Dated progress submissions
 
-Editing diet or other notes invalidates the prior extraction. Late responses cannot overwrite newer input, and training-only edits preserve parsed nutrition. Failures preserve the raw text and offer retry. Imported references remain visible for days without new nutrition input; current pending or failed inputs do not silently reuse an old imported total. Coach context includes current nutrition values, evidence, coverage, and extraction status.
+Open **日志**, confirm the date (defaults to today), type food, training, symptoms or corrections, optionally attach photos, and tap **提交更新**. The input clears after submission so the next entry is a new update. You can submit once in the evening or several times during the day. Date changes are disabled while photos are attached so images cannot silently move to another date. Future dates are rejected.
 
-The debug build, 20 JVM tests, and 17 isolated on-device database/credential/history tests passed. An opt-in synthetic live Qwen test verified estimated breakfast intake, reported weight/expenditure, partial-day coverage, exclusion of tomorrow's plan, and SQLite persistence. The seven-day reference table was visually checked on the Fold7. Photo-assisted logging with portion/sauce notes is tracked separately in [issue #21](https://github.com/Bcardo/ringcoach/issues/21).
+Examples: submit lunch with a photo and “米饭吃了一半”; later submit “又喝了一杯蛋白粉”; later correct “午餐米饭实际只吃了四分之一”. There is no separate Add Meal step. Text describing a photo belongs to the same update. Multiple photo attachments can describe the same meal without implying multiple meals.
 
-## Unified journal and meal logging
+Each update is saved atomically with a stable submission ID, its date, timestamp and attachment IDs. Replaying the same ID does not append another event. Existing journals, plans, photos and coach cards survive the schema-9 to schema-10 upgrade. Earlier unsent meal drafts are preserved internally; new submissions use the new attachment workflow.
 
-Use **今日 → 记录今天** (or **继续记录今天**) for training, optional daily nutrition totals, other notes, and individual meals in one journal. **追加一餐（文字）** creates a text meal; **拍照** or **选择照片** creates a photo meal. Add portion, sauce/oil, preparation, shared-dish, and leftover details, then confirm the meal was consumed. **保存并分析全部** saves the journal and selected meal edits atomically before analysis, processes unanalysed/changed confirmed meals, and retains inputs if a request fails. Completed unchanged meals are not submitted again.
+Nutrition recognition sends the complete dated journal context and that day's submitted photos together to Qwen, including prior meal notes/estimates when converting older records. It rebuilds the day's current intake rather than adding a new estimate to an old total. Prompt rules distinguish additions, corrections, repeated descriptions, planned food and explicit daily totals. A later explicit addition after a daily total is counted and makes the result “recorded so far” again. Ambiguous food/portions remain unknown and are surfaced for clarification; image-derived nutrition is still an estimate. A structurally invalid nutrition reply gets one repair request; unsupported evidence is never accepted just to complete an update.
 
-For later food, return to the same journal and append another meal, then submit again. Open an existing meal to correct it; reanalysis replaces that meal's estimate. Corrections retain prior note/result revisions in SQLite. Deleting a meal removes its local image and revision history and updates current totals. The **训练** tab shows today's saved food consumption and summary alongside exercise progress.
+Home also displays the food recognized and the model's estimation assumptions. Total food weight is combined with visible ingredients; grams of protein powder are not treated as grams of pure protein. Matching photo/weight descriptions are treated as a supplement to the same meal unless another serving is explicitly reported. Aggregate evidence can cite several original fragments on separate lines; every fragment is checked against saved input. Clarification questions may be written naturally. Journal failure messages distinguish nutrition recognition, workout recognition and coaching, with additional network/key/response errors where available.
 
-Explicit full-day totals override meal subtotals. Ambiguous overlapping free text is not added to meals automatically; the journal and nutrition view offer a choice to treat the text as including the meals or as separate food. If a full-day total is already present, update/clear it when recording further intake, or keep complete individual meal records instead. Aggregates preserve missing fields and remain partial-day intake unless a full-day total is explicitly reported.
+Training recognition reads the same dated updates and known exercise references, extracting actual performance rather than planned performance. Both extraction stages retain source-revision guards so a late response cannot overwrite a newer update. Coaching waits for recognition to finish successfully, refreshes recovery/Health Connect summaries and then updates current recommendations and the training plan. Updating a previous date within the seven-day context refreshes today's advice. Older raw journals remain in History, but current coaching only retrieves seven calendar days.
 
-Photos are reencoded as JPEG with a maximum dimension of 1280 pixels and capped at 700,000 bytes; originals/EXIF metadata are not copied into meal storage. A private FileProvider supports the camera output, and the system photo picker supplies selected images. The reviewed photo (if any) and meal notes go to the saved Qianwen endpoint only upon submission. [Qwen3.8-Flash supports image input and structured output](https://platform.qianwenai.com/docs/models/qwen3-8-flash); requests use the documented [Base64 image message format](https://platform.qianwenai.com/docs/developer-guides/multimodal/vision). Images are stored in the private SQLite database and are excluded from coaching payloads, repository files, and logs. Coach context receives meal estimates, provenance, status, and locally reconciled totals.
+Input and retry state are retained privately so failed network requests do not require re-entry. They are implementation details, not a user-managed meal/partial-state workflow. Processing uses the saved key and needs network access and an active app; foreground work can be interrupted by Android. Reopen the app to resume pending work; failed work offers **重试更新** in Journal. Do not resubmit the same food to retry a failure. The model does not independently retain your history: RingCoach supplies the saved context on each request.
 
-Validation includes unit tests for reconciliation/unknown values and isolated phone tests for schema-8 upgrade, source revisions, append/correction/deletion, image preparation, and atomic submission rollback. Two live requests with a synthetic meal drawing verified image support and portion/sauce correction without duplicating meals. The owner also selected a food photo and generated a saved estimate on the phone. These checks establish workflow behavior, not nutritional accuracy of image estimates.
+## Plans, prompt and current intake
 
-## In-app coach cards
+Use the shared **设置** entry to edit **基础训练计划**, **基础饮食计划** and **教练指令**. Existing imported personal plans remain in place. Daily intake targets come from these saved instructions and explicit dated adjustments, not a separate fixed numeric target configuration. The Home diet guidance explains the applicable plan and remaining intake when the supplied plan and recorded amounts support it. No unknown nutrient target is invented.
 
-Save the Qianwen key under **设置**. Android Keystore-backed encryption protects it; the key is excluded from SQLite and settings imports. In **教练**, prepare and review the context before sending it. The request includes saved preferences, seven days of journal/nutrition history, reference baselines, latest recognized workout records, extraction statuses, and a fresh Health Connect summary. Missing HRV remains missing.
+Training always displays the full saved routine and exercise table, with current performance or clearly dated reference baselines. Generated advice appears as dated adjustments alongside that plan; it does not replace or hide the plan, overwrite the owner's long-term settings, or change completed records. Home and Training label older advice rather than presenting it as newly generated.
 
-Successful Chinese cards have training, diet, and evidence/data-gap sections. SQLite archives the response and reviewed input snapshot, and the latest card reloads after reopening the app. A live Qwen card was generated and its persistence verified on the Fold7.
+## Data sent and stored
+
+Photos are compressed JPEGs up to 1280 pixels and 700,000 bytes each, without original EXIF metadata, stored in app-private SQLite. Only submitted photos for the analyzed date go to nutrition recognition. Coaching receives saved plans/instructions, seven days of dated journal/nutrition context, performance references and health summaries; it does not receive the photos or a raw Bluetooth/PPG stream. API keys remain Android Keystore-encrypted and excluded from SQLite exports and settings imports.
+
+History groups journal text, recent nutrition and archived advice by date. Opening saved advice makes no model request. Current nutrition summaries cover seven days; raw journal and advice history are retained beyond that window. Technical context inspection and reviewed health JSON export are Settings tools.
+
+## Validation
+
+Build and run JVM tests with `./gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest :app:testDebugUnitTest`. Install app/test APKs with the existing debug signing key and `adb install -r` (also `-t` for the test APK); never uninstall to update the owner's app.
+
+`ProgressSubmissionTest` uses disposable databases to verify ordered additions/corrections, replay protection, stale-result rejection, photo/date rollback, unified totals without a second photo sum, and schema-9 migration preserving personal settings and records. `ProgressSubmissionLiveTest` is opt-in with `-e live_progress true`; it sends synthetic breakfast, a generated test drink label with matching text, and a correction to Qwen, checking totals after each update. No synthetic entry is saved into the owner's journal. These tests verify processing behavior, not the nutritional accuracy of arbitrary food photos.
+
+The final build passed 33 JVM tests and 24 on-phone database/UI tests. Synthetic live addition/photo/correction checks passed. After the owner reported a real failed update, the saved photo, weight description, snack and workout were recovered without new journal entries; nutrition completed, the updated coach card used that result and five workout observations, and its pending queue was acknowledged. `ProgressRecoveryLiveTest` is an explicit opt-in owner-data retry (`-e recover_progress true`), not part of ordinary synthetic tests.
 
 ## Build on Windows
 
@@ -106,7 +142,7 @@ For a manual install, copy `app-debug.apk` to the phone, open it from **My Files
 ## Check Health Connect coverage
 
 1. Sync the Ring in Samsung Health. In Samsung Health settings, open **Health Connect** and allow Samsung Health to write the available metrics you want to check.
-2. In RingCoach, tap **检查数据** (Check data) before granting access to verify that supported metrics show **未授权读取** (Read access not granted).
+2. In RingCoach Settings → **Health Connect · 连接与诊断**, tap **检查数据** (Check data) before granting access to verify that supported metrics show **未授权读取** (Read access not granted).
 3. Tap **授权读取** (Grant read access), grant just one available metric, then tap **检查数据** again. Check that the granted metric returns coverage or an empty result and the other supported metrics still show the permission status.
 4. Grant the remaining metrics you want to inspect and run the check again. Review the counts, coverage dates, and source app. The probe includes records from all available sources and displays device metadata when present.
 

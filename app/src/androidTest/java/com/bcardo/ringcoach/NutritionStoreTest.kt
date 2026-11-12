@@ -64,6 +64,7 @@ class NutritionStoreTest {
             val draft = JournalDraft(LocalDate.of(2025, 1, 10), "Bench", "Total 1700 kcal", "70 kg")
             store.save(draft)
             val workout = store.nextPendingWorkout()
+            store.writableDatabase.execSQL("DROP TABLE progress_submissions")
             store.writableDatabase.execSQL("DROP TABLE nutrition_extractions")
             store.writableDatabase.execSQL("DROP TABLE meal_revisions")
             store.writableDatabase.execSQL("DROP TABLE photo_meals")

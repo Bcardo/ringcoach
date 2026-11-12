@@ -4,10 +4,46 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 
 class NutritionExtractionTest {
+    @Test fun aggregateEvidenceCanCiteSeveralSavedUpdatesWithoutInventingAQuote() {
+        val json = blank().put("protein_grams", JSONObject().put("value", 35).put("kind", "estimated")
+            .put("evidence", "早餐蛋白质10g\n午餐蛋白质25g"))
+            .put("food_summary", "早餐和午餐")
+            .put("assumptions", JSONArray(listOf("两次记录合计")))
+            .put("unresolved", JSONArray(listOf("蛋白粉是什么品牌？")))
+        val result = NutritionExtractor.decode(json.toString(), "早餐蛋白质10g\n[更新 lunch]\n午餐蛋白质25g")
+        assertEquals(35.0, result.values.getValue("protein_grams").value!!, 0.0)
+        assertEquals("早餐和午餐", result.foodSummary)
+        assertEquals(listOf("蛋白粉是什么品牌？"), result.unresolved)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsAnInventedFragmentAmongValidEvidenceLines() {
+        val json = blank().put("intake_kcal", JSONObject().put("value", 300).put("kind", "estimated")
+            .put("evidence", "早餐鸡蛋\n午餐牛肉"))
+        NutritionExtractor.decode(json.toString(), "早餐鸡蛋\n午餐米饭")
+    }
+
+    @Test fun multimodalRequestPairsEveryImageWithItsDatedSourceMarker() {
+        val date = LocalDate.of(2026, 11, 11)
+        val job = PendingNutrition(date, "update", "", "午餐和照片是同一餐\n[照片 lunch]", true)
+        val request = NutritionExtractor.request(job, "Extract", listOf("lunch" to byteArrayOf(1, 2, 3)))
+        val parts = request.getJSONArray("messages").getJSONObject(1).getJSONArray("content")
+        assertTrue(parts.getJSONObject(0).getString("text").contains(date.toString()))
+        assertEquals("[照片 lunch]", parts.getJSONObject(1).getString("text"))
+        assertEquals("data:image/jpeg;base64,AQID", parts.getJSONObject(2).getJSONObject("image_url").getString("url"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsImageThatIsNotInTheJobSnapshot() {
+        NutritionExtractor.request(PendingNutrition(LocalDate.of(2026, 11, 11), "update", "", "[照片 lunch]", true),
+            "Extract", listOf("different-date-or-update" to byteArrayOf(1)))
+    }
+
     private fun blank(): JSONObject = JSONObject().apply {
         for (field in NUTRITION_FIELDS) put(field, JSONObject().put("value", JSONObject.NULL)
             .put("kind", "missing").put("evidence", ""))

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="progress_submitted">进度已提交，正在更新摄入、训练计划与建议。</string>
+    <string name="nutrition_invalid_response">饮食分析结果的格式或来源校验未通过。照片和文字已保留，可重试分析。</string>
+    <string name="samsung_screen_reader_label">RingCoach 睡眠 HRV 读取</string>
+    <string name="samsung_screen_reader_description">仅在 RingCoach 发起同步时，读取三星健康能量得分页面中最近七天的能量得分和睡眠 HRV，保存到本机并返回 RingCoach。同步时会短暂显示三星健康；不会操作其他应用或更改健康记录。可随时关闭。</string>
     <string name="daily_add_meal">追加一餐（文字）</string>
     <string name="daily_meals_title">今日逐餐记录 · 文字或照片</string>
     <string name="daily_submit_all">保存并分析全部</string>
@@ -108,7 +112,7 @@
     <string name="nav_settings">设置</string>
     <string name="nav_coach">教练</string>
     <string name="nav_training">训练</string>
-    <string name="workout_help">保存日常训练后，自动识别完成情况并更新这里。没有完成记录的动作显示导入基准。</string>
+    <string name="workout_help">日志中的训练会自动更新完成情况。没有完成记录的动作显示导入计划基准。</string>
     <string name="workout_syncing">正在读取并识别训练记录…</string>
     <string name="workout_key_needed">训练原文已保存在本机。配置千问密钥后，可自动识别完成情况。</string>
     <string name="workout_pending">部分训练尚未完成识别，当前进度仅使用已识别的记录。</string>

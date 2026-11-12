@@ -81,15 +81,23 @@ internal class NutritionViewModel(application: Application) : AndroidViewModel(a
                 val parsed = withContext(Dispatchers.IO) {
                     val prompt = getApplication<Application>().assets.open("nutrition-extraction.txt")
                         .bufferedReader(Charsets.UTF_8).use { it.readText() }
-                    val response = QwenClient.post(NutritionExtractor.request(job, prompt), key)
-                    NutritionExtractor.decode(QwenClient.responseText(response), job.source)
+                    NutritionExtractor.extract(job, prompt, store.nutritionPhotos(job), key)
                 }
                 withContext(Dispatchers.IO) { store.applyNutritionExtraction(job, parsed) }
             } catch (exception: CancellationException) {
                 throw exception
-            } catch (_: Exception) {
+            } catch (exception: Exception) {
                 withContext(Dispatchers.IO) { store.failNutritionExtraction(job) }
-                notice = R.string.nutrition_parse_failed
+                notice = when (exception) {
+                    is QwenHttpException -> when (exception.status) {
+                        401, 403 -> R.string.coach_api_access_failed
+                        429 -> R.string.coach_api_quota
+                        else -> R.string.coach_api_failed
+                    }
+                    is java.io.IOException -> R.string.coach_network_failed
+                    is IllegalArgumentException, is org.json.JSONException -> R.string.nutrition_invalid_response
+                    else -> R.string.nutrition_parse_failed
+                }
                 return
             }
         }

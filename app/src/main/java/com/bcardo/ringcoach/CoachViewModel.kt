@@ -24,6 +24,12 @@ internal class PreparedCoaching(val date: LocalDate, val context: JSONObject) {
 internal class CoachViewModel(application: Application) : AndroidViewModel(application) {
     private val store = JournalStore(application)
     private val credentials = QwenCredentials(application)
+    private val progressPreferences = application.getSharedPreferences("automatic-coaching", android.content.Context.MODE_PRIVATE)
+    var pendingProgressId by mutableStateOf(progressPreferences.getString("pending_id", null))
+        private set
+    var pendingProgressDate by mutableStateOf(progressPreferences.getString("pending_date", null))
+        private set
+    private var attemptedProgressId: String? = null
 
     var keyInput by mutableStateOf("")
         private set
@@ -50,6 +56,12 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
     var card by mutableStateOf<SavedCoachCard?>(null)
         private set
     var cardSaved by mutableStateOf(false)
+        private set
+    var nightlySnapshot by mutableStateOf<JSONObject?>(null)
+        private set
+    var nightlySyncing by mutableStateOf(false)
+        private set
+    var nightlyNotice by mutableStateOf<String?>(null)
         private set
 
     val busy: Boolean
@@ -128,20 +140,75 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun prepare(date: LocalDate, probe: HealthConnectProbe?) {
+    fun refreshNightly(date: LocalDate = LocalDate.now(), readScreen: Boolean = false) {
+        if (nightlySyncing) return
+        nightlySyncing = true
+        viewModelScope.launch {
+            try {
+                if (readScreen && SamsungHealthScreenReader.enabled) SamsungHealthScreenReader.capture()
+                nightlySnapshot = withContext(Dispatchers.IO) { SamsungNightlyReader.refresh(getApplication(), date) }
+            }
+            catch (e: CancellationException) { throw e }
+            catch (_: Exception) { nightlyNotice = "恢复数据暂时无法刷新；已保存的日志不受影响。" }
+            finally { nightlySyncing = false }
+        }
+    }
+
+    fun authorizeNightly(activity: android.app.Activity) {
+        if (nightlySyncing) return
+        nightlySyncing = true
+        nightlyNotice = null
+        viewModelScope.launch {
+            try {
+                val granted = SamsungNightlyReader.request(activity)
+                nightlyNotice = if (granted) "已连接三星健康能量得分" else "尚未授权能量得分读取"
+                nightlySnapshot = withContext(Dispatchers.IO) { SamsungNightlyReader.refresh(getApplication()) }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { nightlyNotice = "请在三星健康开发者模式中开启数据读取，再重新连接。" }
+            finally { nightlySyncing = false }
+        }
+    }
+
+    fun queueProgress(date: LocalDate) {
+        val id = UUID.randomUUID().toString()
+        if (progressPreferences.edit().putString("pending_id", id).putString("pending_date", date.toString()).commit()) {
+            pendingProgressDate = date.toString()
+            pendingProgressId = id
+        }
+    }
+
+    fun prepareProgress(probe: HealthConnectProbe?) {
+        val id = pendingProgressId ?: return
+        val date = pendingProgressDate?.let(LocalDate::parse) ?: return
+        if (busy || loadFailed || !hasKey || attemptedProgressId == id) return
+        attemptedProgressId = id
+        prepare(date, probe, autoGenerate = true, progressId = id)
+    }
+
+    fun retryProgress(probe: HealthConnectProbe?) { attemptedProgressId = null; prepareProgress(probe) }
+
+    fun allowProgressRetry() { attemptedProgressId = null; retryTick++ }
+    var retryTick by mutableStateOf(0)
+        private set
+
+    fun prepare(date: LocalDate, probe: HealthConnectProbe?, autoGenerate: Boolean = false, progressId: String? = null) {
         if (busy || loadFailed) return
+        prepared = null
         preparing = true
         notice = null
         viewModelScope.launch {
             try {
+                if (SamsungHealthScreenReader.enabled) SamsungHealthScreenReader.capture()
                 val context = withContext(Dispatchers.IO) {
                     val json = store.readCoachingContext(date, asset("coaching-policy.md")).toJson()
                         .put("request_timezone", ZoneId.systemDefault().id)
+                    progressId?.let { json.put("progress_submission_id", it) }
+                    json.put("nightly_recovery", SamsungNightlyReader.refresh(getApplication(), date))
                     if (probe == null) {
                         json.put("telemetry_status", "unavailable")
                     } else {
                         try {
-                            json.put("telemetry", probe.coachingSnapshot()).put("telemetry_status", "checked")
+                            json.put("telemetry", probe.coachingSnapshot(date)).put("telemetry_status", "checked")
                         } catch (exception: CancellationException) {
                             throw exception
                         } catch (_: Exception) {
@@ -153,6 +220,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                 if (context.toString().toByteArray(Charsets.UTF_8).size > 128 * 1024) {
                     notice = R.string.coach_context_too_large
                 } else {
+                    nightlySnapshot = context.optJSONObject("nightly_recovery")
                     prepared = PreparedCoaching(date, context)
                 }
             } catch (exception: CancellationException) {
@@ -161,6 +229,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                 notice = R.string.coach_prepare_failed
             } finally {
                 preparing = false
+                if (autoGenerate && prepared != null && hasKey) generate()
             }
         }
     }
@@ -186,7 +255,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     QwenClient.generate(reviewed.context, asset("coach-system.txt"), key)
                 }
                 val result = SavedCoachCard(
-                    UUID.randomUUID().toString(), reviewed.date, Instant.now(), QWEN_MODEL,
+                    reviewed.context.optString("progress_submission_id").ifBlank { UUID.randomUUID().toString() }, reviewed.date, Instant.now(), QWEN_MODEL,
                     COACH_PROMPT_VERSION, reviewed.context.toString(), advice,
                 )
                 card = result
@@ -228,6 +297,12 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         try {
             withContext(Dispatchers.IO) { store.saveCoachCard(result) }
             cardSaved = true
+            val completed = JSONObject(result.contextJson).optString("progress_submission_id")
+            if (completed.isNotBlank() && progressPreferences.getString("pending_id", null) == completed) {
+                progressPreferences.edit().remove("pending_id").remove("pending_date").commit()
+                pendingProgressId = null
+                pendingProgressDate = null
+            }
             notice = R.string.coach_card_saved
         } catch (exception: CancellationException) {
             throw exception
