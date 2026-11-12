@@ -35,6 +35,9 @@ internal fun JournalApp(
         workouts.sync(today); nutrition.sync(today)
         if (tab == "history") coachHistory.reload()
     }
+    LaunchedEffect(tab, today, coach.nightlySnapshot) {
+        if (tab == "history") coachHistory.loadRecovery(today)
+    }
     LaunchedEffect(today, journal.loading) {
         if (!journal.loading && lastToday != today.toString()) {
             if (journal.draft.date.toString() == lastToday && !journal.hasChanges && photos.attachments.isEmpty()) journal.openDay(today)
@@ -127,7 +130,10 @@ internal fun JournalApp(
                             }) { Text("重试更新") }
                         }
                     }
-                    "history" -> ProgressHistory(journal, nutrition, coachHistory)
+                    "history" -> {
+                        RecoveryHistoryPanel(coachHistory, today)
+                        ProgressHistory(journal, nutrition, coachHistory)
+                    }
                 }
             }
         }
@@ -166,14 +172,17 @@ private fun ProgressComposer(journal: JournalViewModel, photos: PhotoMealViewMod
 
 @Composable
 private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewModel, history: CoachHistoryViewModel) {
+    Text("日志与教练建议", style = MaterialTheme.typography.titleLarge)
     JournalLoadState(journal)
     if (history.loading) Text("正在读取历史…")
     if (history.loadFailed) OutlinedButton(onClick = history::retry) { Text("重试读取历史") }
-    val dates = (journal.entries.map { it.draft.date } + history.cards.map { it.date } + nutrition.days.filter { it.status != "missing" }.map { it.date })
+    val savedDates = (journal.entries.map { it.draft.date } + history.cards.map { it.date } + nutrition.days.filter { it.status != "missing" }.map { it.date })
         .distinct().sortedDescending()
+    val selectedDate = history.recoveryDate.takeIf { history.recovery != null }
+    val dates = (listOfNotNull(selectedDate) + savedDates).distinct()
     if (dates.isEmpty()) Text("提交第一条进度后，会在这里按日期保留记录和建议。")
     for (date in dates) {
-        var expanded by rememberSaveable(date.toString()) { mutableStateOf(false) }
+        var expanded by rememberSaveable(date.toString(), selectedDate) { mutableStateOf(date == selectedDate) }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = { expanded = !expanded }) { Text("$date · ${if (expanded) "收起" else "查看当天记录"}") }
@@ -193,7 +202,12 @@ private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewM
                                 runCatching { "更新于 " + coachCardTimestamp(java.time.Instant.parse(match.groupValues[1])) }.getOrDefault("进度更新")
                             }.replace(Regex("\\[照片 [^]]+]"), "（附照片）"))
                     }
-                    history.cards.filter { it.date == date }.forEach { summary ->
+                    val cards = if (date == selectedDate) history.recoveryCards else history.cards.filter { it.date == date }
+                    if (date == selectedDate && history.dateLoading) Text("正在读取当天建议…")
+                    if (date == selectedDate && history.dateFailed) TextButton(onClick = { history.selectRecoveryDate(date) }) { Text("重试读取当天建议") }
+                    if (date == selectedDate && !history.dateLoading && !history.dateFailed && !journal.loading && !journal.loadFailed &&
+                        cards.isEmpty() && journal.entries.none { it.draft.date == date }) Text("当天暂无日志或教练建议。")
+                    cards.forEach { summary ->
                         TextButton(onClick = { history.open(summary.id) }) { Text("教练建议 · ${coachCardTimestamp(summary.createdAt)}") }
                     }
                 }

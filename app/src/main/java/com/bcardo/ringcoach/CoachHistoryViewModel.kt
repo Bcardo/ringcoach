@@ -11,6 +11,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import java.time.LocalDate
 
 internal class CoachHistoryViewModel(application: Application, private val state: SavedStateHandle) :
     AndroidViewModel(application) {
@@ -31,6 +33,66 @@ internal class CoachHistoryViewModel(application: Application, private val state
         private set
     private var selectionRevision = 0
     private var lastLoadReset = true
+    var recovery by mutableStateOf<RecoveryTrend?>(null)
+        private set
+    var recoveryLoading by mutableStateOf(false)
+        private set
+    var recoveryFailed by mutableStateOf(false)
+        private set
+    var recoveryRange by mutableStateOf(state.get<Int>("recovery_range") ?: 7)
+        private set
+    var recoveryDate by mutableStateOf(state.get<String>("recovery_date")?.let(LocalDate::parse))
+        private set
+    private var recoveryJob: Job? = null
+    private var recoveryRevision = 0
+    private var dateRevision = 0
+    var recoveryCards by mutableStateOf(emptyList<CoachCardSummary>())
+        private set
+    var dateLoading by mutableStateOf(false)
+        private set
+    var dateFailed by mutableStateOf(false)
+        private set
+
+    fun selectRecoveryDate(date: LocalDate) {
+        recoveryDate = date
+        state["recovery_date"] = date.toString()
+        val revision = ++dateRevision
+        recoveryCards = emptyList()
+        dateLoading = true
+        dateFailed = false
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { store.coachCardSummariesForDate(date) }
+                if (revision == dateRevision) recoveryCards = result
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { if (revision == dateRevision) dateFailed = true }
+            finally { if (revision == dateRevision) dateLoading = false }
+        }
+    }
+
+    fun loadRecovery(today: LocalDate, range: Int = recoveryRange) {
+        require(range in listOf(7, 30))
+        recoveryRange = range
+        state["recovery_range"] = range
+        recoveryJob?.cancel()
+        val revision = ++recoveryRevision
+        recoveryLoading = true
+        recoveryFailed = false
+        recovery = null
+        recoveryJob = viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    NightlyRecoveryStore(getApplication()).use { RecoveryTrend.decode(it.history(today.minusDays(range - 1L), today)) }
+                }
+                if (revision == recoveryRevision) {
+                    recovery = result
+                    selectRecoveryDate(recoveryDate?.takeIf { it in result.days } ?: today)
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { if (revision == recoveryRevision) recoveryFailed = true }
+            finally { if (revision == recoveryRevision) recoveryLoading = false }
+        }
+    }
 
     init {
         state.get<String>("coach_history_selected")?.let(::open)

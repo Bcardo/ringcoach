@@ -40,6 +40,9 @@ class CoachHistoryStoreTest {
             assertEquals(generated[12], store.coachCard(generated[12].id))
             assertEquals("newer", store.latestCoachCard()!!.id)
             assertEquals("newer", store.coachCardSummaries().first().id)
+            assertEquals(46, store.coachCardSummariesForDate(date).size)
+            assertEquals("newer", store.coachCardSummariesForDate(date).first().id)
+            assertTrue(store.coachCardSummariesForDate(date.minusDays(1)).isEmpty())
         } finally {
             store.close()
             context.deleteDatabase(name)
