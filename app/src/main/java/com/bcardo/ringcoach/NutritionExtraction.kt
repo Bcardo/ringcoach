@@ -18,6 +18,8 @@ internal data class NutritionExtraction(
     val unresolved: List<String>,
     val foodSummary: String = "",
     val assumptions: List<String> = emptyList(),
+    val foodItems: List<FoodFact> = emptyList(),
+    val revisedFoodIds: List<String> = emptyList(),
 ) {
     val balance: Double?
         get() = values["intake_kcal"]?.value?.let { intake -> values["expenditure_kcal"]?.value?.let { intake - it } }
@@ -26,11 +28,12 @@ internal data class NutritionExtraction(
         for (field in NUTRITION_FIELDS) put(field, values.getValue(field).toJson())
         put("coverage", coverage).put("scope_evidence", scopeEvidence).put("unresolved", JSONArray(unresolved))
         put("food_summary", foodSummary).put("assumptions", JSONArray(assumptions))
+        put("food_items", JSONArray(foodItems.map { it.toJson() })).put("revised_food_ids", JSONArray(revisedFoodIds))
     }
 }
 
 internal data class PendingNutrition(val date: LocalDate, val revision: String, val diet: String, val additional: String,
-    val unified: Boolean = false) {
+    val unified: Boolean = false, val turn: NutritionTurn? = null) {
     val source: String get() = nutritionSource(diet, additional)
 }
 
@@ -64,21 +67,57 @@ internal data class NutritionDay(
 }
 
 internal object NutritionExtractor {
-    fun extract(job: PendingNutrition, instructions: String, photos: List<Pair<String, ByteArray>>, key: String): NutritionExtraction {
+    fun extract(job: PendingNutrition, instructions: String, photos: List<Pair<String, ByteArray>>, key: String,
+        post: (JSONObject, String) -> String = QwenClient::post): NutritionExtraction {
         val request = request(job, instructions, photos)
-        val answer = QwenClient.responseText(QwenClient.post(request, key))
-        try { return decode(answer, job.source) } catch (_: IllegalArgumentException) {
+        val answer = QwenClient.responseText(post(request, key))
+        try { return decodeForJob(answer, job).also { DailyFoodState.validate(job, it) } } catch (_: IllegalArgumentException) {
             // Repair a structurally invalid answer once, without accepting unsupported evidence or changing totals locally.
             request.getJSONArray("messages")
                 .put(JSONObject().put("role", "assistant").put("content", answer))
                 .put(JSONObject().put("role", "user").put("content",
-                    "上次结果未通过校验。请重新输出完整JSON：evidence中每一行必须逐字引用journal_input的原文片段；reported的value必须作为数字直接出现在该evidence中。多餐相加或更正后计算出的营养总计若未逐字汇报，必须标estimated，不得标reported。未知value必须null、kind=missing、evidence为空。unresolved只写需要澄清的具体问题。不要改变有依据的总计。"))
-            return decode(QwenClient.responseText(QwenClient.post(request, key)), job.source)
+                    "上次结果未通过校验。请重新输出完整JSON：evidence每行逐字引用原文；reported数值必须出现在evidence中。图片标签里的数字若未在用户文字中出现，必须用estimated并引用[照片 ID]，不能编造文字引用；计算合计也用estimated。旧food_items未被本次明确修正时必须逐字段原样复制。改变或移除的旧ID必须准确列入revised_food_ids；新ID用本次submission_id加冒号和编号，新source_submission_ids只含本次ID。修正项保留旧来源并追加本次ID。每日营养合计必须等于当前食品项之和。缺失用null，不用0。"))
+            return decodeForJob(QwenClient.responseText(post(request, key)), job).also { DailyFoodState.validate(job, it) }
         }
     }
 
+    /** Image labels are interpreted measurements, never user-typed numeric reports. Numbers are unchanged. */
+    fun decodeForJob(content: String, job: PendingNutrition): NutritionExtraction {
+        if (job.turn == null) return decode(content, job.source)
+        val json = JSONObject(content)
+        val marker = Regex("\\[照片 [^]]+]")
+        for (field in MEAL_FIELDS) {
+            val row = json.getJSONObject(field)
+            val evidence = row.getString("evidence")
+            if (row.optString("kind") == "reported" && !row.isNull("value") && marker.containsMatchIn(evidence)) {
+                val outsideMarker = evidence.replace(marker, "")
+                val value = row.getDouble("value")
+                val directlyQuoted = Regex("[0-9]+(?:\\.[0-9]+)?").findAll(outsideMarker).any { it.value.toDouble() == value }
+                if (!directlyQuoted) row.put("kind", "estimated")
+            }
+        }
+        return decode(json.toString(), job.source)
+    }
+
     fun request(job: PendingNutrition, instructions: String, photos: List<Pair<String, ByteArray>> = emptyList()): JSONObject {
+        job.turn?.takeIf { it.previous != null }?.let { turn ->
+            require(photos.all { it.first in turn.photoIds }) { "Only this turn's new images may be uploaded" }
+        }
         val input = JSONObject().put("date", job.date.toString()).put("journal_input", job.source)
+        job.turn?.let {
+            input.put("new_input", JSONObject().put("submission_id", it.id).put("text", it.input).put("photo_ids", JSONArray(it.photoIds)))
+                .put("previous_daily_state", it.previous?.toJson() ?: JSONObject.NULL)
+                .put("photo_matches_previous_submissions", JSONObject(it.photoMatches.mapValues { entry -> JSONArray(entry.value) }))
+                .put("update_mode", "incremental")
+        }
+        val allowedEvidence = job.turn?.let { turn ->
+            val fragments = listOf("") + listOf(turn.input).filter { it.isNotBlank() } +
+                Regex("\\[照片 [^]]+]").findAll(job.source).map { it.value }.toList() +
+                (turn.previous?.values?.values?.map { it.evidence } ?: emptyList()) +
+                DailyFoodState.evidenceContext(turn.previous).lineSequence().filter { it.isNotBlank() }.toList()
+            (fragments + fragments.filter { it.isNotBlank() }.distinct().joinToString("\n")).distinct()
+        }
+        if (allowedEvidence != null) input.put("allowed_evidence", JSONArray(allowedEvidence))
         val content = JSONArray().put(JSONObject().put("type", "text").put("text", input.toString()))
         for ((id, jpeg) in photos) {
             require(jpeg.isNotEmpty() && jpeg.size <= MAX_MEAL_PHOTO_BYTES && job.source.contains("[照片 $id]"))
@@ -92,6 +131,8 @@ internal object NutritionExtractor {
                 .put("value", JSONObject().put("type", JSONArray(listOf("number", "null"))))
                 .put("kind", JSONObject().put("type", "string").put("enum", JSONArray(listOf("reported", "estimated", "missing"))))
                 .put("evidence", JSONObject().put("type", "string")))
+        if (allowedEvidence != null) numberSchema.getJSONObject("properties").getJSONObject("evidence")
+            .put("enum", JSONArray(allowedEvidence))
         val properties = JSONObject()
         for (field in NUTRITION_FIELDS) properties.put(field, numberSchema)
         properties.put("coverage", JSONObject().put("type", "string")
@@ -102,7 +143,12 @@ internal object NutritionExtractor {
             .put("assumptions", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")))
         val schema = JSONObject().put("type", "object").put("properties", properties).put("additionalProperties", false)
             .put("required", JSONArray(NUTRITION_FIELDS + listOf("coverage", "scope_evidence", "unresolved", "food_summary", "assumptions")))
-        return JSONObject().put("model", QWEN_MODEL).put("enable_thinking", false).put("max_tokens", 3000)
+        if (job.turn != null) {
+            properties.put("food_items", JSONObject().put("type", "array").put("items", FoodFact.schema()))
+                .put("revised_food_ids", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")))
+            schema.getJSONArray("required").put("food_items").put("revised_food_ids")
+        }
+        return JSONObject().put("model", QWEN_MODEL).put("enable_thinking", false).put("max_tokens", if (job.turn == null) 3000 else 6500)
             .put("messages", JSONArray()
                 .put(JSONObject().put("role", "system").put("content", instructions))
                 .put(JSONObject().put("role", "user").put("content", if (photos.isEmpty()) input.toString() else content)))
@@ -122,7 +168,7 @@ internal object NutritionExtractor {
         val json = JSONObject(content)
         val required = (NUTRITION_FIELDS + listOf("coverage", "scope_evidence", "unresolved")).toSet()
         val keys = json.keys().asSequence().toSet()
-        require(keys.containsAll(required) && keys.all { it in required || it in setOf("food_summary", "assumptions") })
+        require(keys.containsAll(required) && keys.all { it in required || it in setOf("food_summary", "assumptions", "food_items", "revised_food_ids") })
         val values = NUTRITION_FIELDS.associateWith { field ->
             val row = json.getJSONObject(field)
             require(row.keys().asSequence().toSet() == setOf("value", "kind", "evidence"))
@@ -166,6 +212,12 @@ internal object NutritionExtractor {
             require(value is String && value.isNotBlank() && value.length <= 1000)
             value
         }
-        return NutritionExtraction(values, coverage, scope, fragments, summary, assumptionTexts)
+        val foods = json.optJSONArray("food_items") ?: JSONArray()
+        require(foods.length() <= 100)
+        val foodItems = (0 until foods.length()).map { FoodFact.decode(foods.getJSONObject(it)) }
+        val revisions = json.optJSONArray("revised_food_ids") ?: JSONArray()
+        require(revisions.length() <= 100)
+        val revisedIds = (0 until revisions.length()).map { revisions.getString(it) }
+        return NutritionExtraction(values, coverage, scope, fragments, summary, assumptionTexts, foodItems, revisedIds)
     }
 }

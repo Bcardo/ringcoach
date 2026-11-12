@@ -61,11 +61,13 @@ internal data class PhotoMeal(
     val model: String,
     val promptVersion: String,
     val hasPhoto: Boolean = true,
+    val wasPhoto: Boolean = hasPhoto,
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("date", date.toString())
         .put("revision", revision).put("notes", notes).put("consumed", consumed).put("status", status)
         .put("estimate", estimate?.toJson() ?: JSONObject.NULL).put("model", model)
-        .put("prompt_version", promptVersion).put("source", if (hasPhoto) "photo_with_user_notes" else "text_meal")
+        .put("prompt_version", promptVersion).put("source", if (wasPhoto) "photo_with_user_notes" else "text_meal")
+        .put("image_retained", hasPhoto)
 }
 
 internal object PhotoMealClient {
