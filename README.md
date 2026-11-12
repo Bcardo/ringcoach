@@ -1,5 +1,7 @@
 # RingCoach
 
+See the [recovery verification and data-flow audit](docs/data-flow-audit.md) for what is verified, what stays local, what reaches Qwen, and the remaining Bluetooth/reliability gaps.
+
 Native Android prototype for checking Health Connect coverage on the Galaxy Z Fold7, exporting a reviewed telemetry sample, and analyzing it on Windows.
 
 Nightly recovery is now integrated with progress submissions: Energy Score refreshes through Samsung Health's SDK, and an explicitly enabled Samsung Health screen reader captures exact daily sleeping HRV. The app catches up recent nights when opened or when food/training is submitted, then automatically saves updated coaching advice after recognition finishes. See [nightly recovery setup, behavior, and validation](docs/nightly-recovery.md), including the distinction between background Energy Score polling and foreground HRV capture. The build requires the owner-downloaded Samsung SDK AAR described in [app/libs/README.md](app/libs/README.md).

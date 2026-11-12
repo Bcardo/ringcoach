@@ -25,7 +25,7 @@ internal fun JournalApp(
     var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
     val enabled = !journal.loading && !journal.saving && !journal.loadFailed && !photos.working
     val processing = photos.working || workouts.syncing || nutrition.syncing || coach.busy
-    val extractionReady = !nutrition.needsKey && !workouts.needsKey && nutrition.notice == null && workouts.notice == null &&
+    val extractionReady = nutrition.loaded && workouts.loaded && !nutrition.needsKey && !workouts.needsKey && nutrition.notice == null && workouts.notice == null &&
         nutrition.days.none { it.status in setOf("pending", "failed") } && workouts.statuses.none { it.optString("status") != "complete" }
     LaunchedEffect(coach.pendingProgressId, coach.retryTick, photos.working, workouts.syncing, nutrition.syncing, coach.busy, coach.hasKey, settings.busy, extractionReady) {
         if (coach.pendingProgressId != null && !photos.working && !workouts.syncing && !nutrition.syncing &&

@@ -21,6 +21,8 @@ internal class NutritionViewModel(application: Application) : AndroidViewModel(a
         private set
     var syncing by mutableStateOf(false)
         private set
+    var loaded by mutableStateOf(false)
+        private set
     var needsKey by mutableStateOf(false)
         private set
     var notice by mutableStateOf<Int?>(null)
@@ -57,6 +59,7 @@ internal class NutritionViewModel(application: Application) : AndroidViewModel(a
 
     private suspend fun refresh(date: LocalDate) {
         days = withContext(Dispatchers.IO) { store.readCoachingContext(date, "").nutritionDays }
+        loaded = true
     }
 
     fun reconcile(day: LocalDate, mode: String, today: LocalDate) {
