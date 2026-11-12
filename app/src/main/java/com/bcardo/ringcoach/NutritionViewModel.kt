@@ -78,6 +78,7 @@ internal class NutritionViewModel(application: Application) : AndroidViewModel(a
     private suspend fun processPending() {
         while (true) {
             val job = withContext(Dispatchers.IO) { store.nextPendingNutrition() } ?: return
+            if (job.turn?.status == "failed") { notice = R.string.nutrition_parse_failed; return }
             val key = withContext(Dispatchers.IO) { credentials.read() }
             if (key == null) { needsKey = true; return }
             try {
@@ -86,7 +87,9 @@ internal class NutritionViewModel(application: Application) : AndroidViewModel(a
                         .bufferedReader(Charsets.UTF_8).use { it.readText() }
                     NutritionExtractor.extract(job, prompt, store.nutritionPhotos(job), key)
                 }
-                withContext(Dispatchers.IO) { store.applyNutritionExtraction(job, parsed) }
+                withContext(Dispatchers.IO) {
+                    if (store.applyNutritionExtraction(job, parsed) && job.turn == null) store.releaseConfirmedLegacyPhotos()
+                }
             } catch (exception: CancellationException) {
                 throw exception
             } catch (exception: Exception) {

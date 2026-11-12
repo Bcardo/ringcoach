@@ -49,20 +49,22 @@ internal class PhotoMealStore(private val db: SQLiteDatabase) {
                 put("created_at", System.currentTimeMillis())
             })
             archive(id)
+            IncrementalNutritionStore.rememberPhoto(db, id, jpeg)
             db.delete("nutrition_reconciliation", "date = ?", arrayOf(date.toString()))
         }
         return id
     }
 
     fun list(start: LocalDate, end: LocalDate): List<PhotoMeal> = db.rawQuery("""
-        SELECT id, date, revision, notes, consumed, status, result_json, created_at, model, prompt_version, length(photo_jpeg)
+        SELECT id, date, revision, notes, consumed, status, result_json, created_at, model, prompt_version, length(photo_jpeg),
+            (length(photo_jpeg)>0 OR EXISTS (SELECT 1 FROM photo_provenance p WHERE p.photo_id=photo_meals.id))
         FROM photo_meals WHERE date BETWEEN ? AND ? ORDER BY created_at DESC, id DESC
     """.trimIndent(), arrayOf(start.toString(), end.toString())).use { cursor ->
         buildList {
             while (cursor.moveToNext()) add(PhotoMeal(cursor.getString(0), LocalDate.parse(cursor.getString(1)),
                 cursor.getString(2), cursor.getString(3), cursor.getInt(4) != 0, cursor.getString(5),
                 if (cursor.isNull(6)) null else MealEstimate.decode(cursor.getString(6)),
-                Instant.ofEpochMilli(cursor.getLong(7)), cursor.getString(8), cursor.getString(9), cursor.getInt(10) > 0))
+                Instant.ofEpochMilli(cursor.getLong(7)), cursor.getString(8), cursor.getString(9), cursor.getInt(10) > 0, cursor.getInt(11) != 0))
         }
     }
 

@@ -13,9 +13,9 @@ There is no RingCoach cloud backend. Normal model requests go directly from the 
 | Data | Phone/local retention | Sent for analysis/coaching |
 | --- | --- | --- |
 | Submitted journal text and corrections | Immutable dated submissions plus cumulative journal/extraction sources in private SQLite | Nutrition sees dated diet/mixed text; workout extraction sees mixed text and exercise references; coaching receives seven calendar days of journal context |
-| Submitted food photos | Compressed JPEGs in private SQLite | Nutrition receives photos for the analyzed date with the text. The final coaching call receives the nutrition result, food summary, assumptions and provenance, not the images |
+| Submitted food photos | Temporary compressed JPEGs pending successful conversion; then app-private bytes are released, retaining a fingerprint/provenance | Nutrition receives only the pending turn's new photos, prior converted facts and text context. Coaching receives the resulting facts/estimates, not the images |
 | Unsubmitted attachments / legacy meal drafts | Retained privately | Not included as consumed food merely because they exist locally |
-| Nutrition estimates, evidence, questions and assumptions | Private SQLite | Included in current seven-day coaching context; no second addition of photo estimates for unified days |
+| Nutrition estimates, food facts, evidence, questions and assumptions | Versioned turn results and confirmed daily food state in private SQLite | Later inputs reuse old food facts; unchanged estimates are preserved and totals are validated against returned facts. Included in seven-day coaching context |
 | Base routine, diet plan and coaching instructions | Private SQLite | Supplied to coaching; instructions become system-message content |
 | Workout observations and imported references | Private SQLite | Latest applicable exercise baselines and recognized completed/partial performance, with statuses, reach coaching |
 | Energy Score and exact sleeping HRV | Dated records and sync state in separate private recovery SQLite | Seven calendar days of values, sources, precision/interpretation and sync status reach coaching |
@@ -24,7 +24,7 @@ There is no RingCoach cloud backend. Normal model requests go directly from the 
 | Health Connect RMSSD, if available | Read on demand; summary archived | Sample count/min/max/mean. No computed baseline or z-score. The tested configuration returned no HC RMSSD records; vendor daily HRV is a separate metric |
 | Health Connect skin temperature, if available | Read on demand; summary archived | Delta count/min/max/mean and count of records with a baseline. Absolute baseline values and individual deltas/timestamps are omitted. The tested configuration returned no records |
 | Health Connect reviewed export | Written only to the location selected by the owner | Not automatically uploaded. Its raw fields are broader than the normal coaching summary |
-| Prior coach cards and exact input snapshots | Private SQLite, browseable in History | Cards are not automatically resent as conversation memory. New coaching uses supplied plans, raw journals, recognized progress and current health summaries |
+| Prior coach cards and input snapshots | Private SQLite, browseable in History; no photo bytes | Relevant previous same-day advice is included separately as advice, not confirmed facts. New coaching uses saved plans, dated progress, converted food state and health summaries |
 | API credential | Android Keystore-encrypted private storage | Used only for request authorization, not included in model context, SQLite plans or settings imports |
 | Bluetooth snoops, provider diagnostics, raw RMSSD/SDNN windows and personal research exports | Owner's private phone/PC research files; not production app ingestion | Not automatically fed into RingCoach or Qwen. Raw windows are not substituted for Samsung's daily sleeping HRV |
 
@@ -35,6 +35,7 @@ There is no RingCoach cloud backend. Normal model requests go directly from the 
 - Missing or unauthorized metrics remain explicit. There is no current collector for Samsung sleep score, vendor resting heart rate, respiration, SpO₂, steps, activity calories or temperature baseline. Seeing a number in Samsung Health does not mean RingCoach collected it.
 - No verified multi-night automatic-delivery acceptance run has been completed. Foreground HRV capture depends on Samsung's tested Chinese layout, resource IDs and a one-hour successful-capture cache. Background timing is inexact.
 - Nutrition photo estimates and composition assumptions are model estimates, not validated measurements. Additions/corrections/deduplication were tested synthetically and a reported real failed update was recovered, but broad food-image accuracy remains unmeasured.
+- Confirmed schema-10 photo results are converted to a clearly labeled aggregate food fact before image release. Unresolved/unprocessed legacy images remain retryable; no original gallery file is deleted. After release, old visual detail cannot be re-inspected unless the owner attaches it again.
 - The seven-day heart-rate aggregate loses nightly trends. Stage sequence and skin-temperature baseline values are also intentionally reduced by the current serializer. Adding these to coaching would require a deliberate schema and test update.
 
 ## Code trace

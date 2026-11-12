@@ -76,10 +76,19 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         loadFailed = false
         viewModelScope.launch {
             try {
-                val loaded = withContext(Dispatchers.IO) { (credentials.read() != null) to store.latestCoachCard() }
+                val loaded = withContext(Dispatchers.IO) {
+                    val latest = store.latestCoachCard()
+                    Triple(credentials.read() != null, latest, store.hasUncoachedIncrementalProgress(LocalDate.now(), latest))
+                }
                 hasKey = loaded.first
                 card = loaded.second
                 cardSaved = loaded.second != null
+                val savedProgressId = loaded.second?.let { JSONObject(it.contextJson).optString("progress_submission_id") }
+                if (pendingProgressId != null && pendingProgressId == savedProgressId) {
+                    progressPreferences.edit().remove("pending_id").remove("pending_date").commit()
+                    pendingProgressId = null; pendingProgressDate = null
+                }
+                if (pendingProgressId == null && loaded.third) queueProgress(LocalDate.now())
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: Exception) {
@@ -203,6 +212,10 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     val json = store.readCoachingContext(date, asset("coaching-policy.md")).toJson()
                         .put("request_timezone", ZoneId.systemDefault().id)
                     progressId?.let { json.put("progress_submission_id", it) }
+                    json.put("nutrition_turn_ids", org.json.JSONArray(store.incrementalSubmissionIds(date, completedOnly = true)))
+                    store.latestCoachCard()?.takeIf { it.date == date }?.let {
+                        json.put("previous_advice", it.advice.toJson())
+                    }
                     json.put("nightly_recovery", SamsungNightlyReader.refresh(getApplication(), date))
                     if (probe == null) {
                         json.put("telemetry_status", "unavailable")

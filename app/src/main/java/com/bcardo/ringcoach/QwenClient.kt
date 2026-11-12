@@ -6,7 +6,7 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 internal const val QWEN_MODEL = "qwen3.8-flash"
-internal const val COACH_PROMPT_VERSION = "coach-v8-dated-progress"
+internal const val COACH_PROMPT_VERSION = "coach-v9-incremental-food-state"
 
 internal data class CoachAdvice(val training: List<String>, val diet: List<String>, val notes: List<String>) {
     fun toJson(): JSONObject = JSONObject()
@@ -52,6 +52,7 @@ internal object QwenClient {
         val facts = JSONObject(context.toString())
         val instructions = facts.remove("instructions") as? String ?: ""
         facts.remove("progress_submission_id")
+        facts.remove("nutrition_turn_ids")
         return JSONObject()
             .put("model", QWEN_MODEL)
             .put("enable_thinking", false)

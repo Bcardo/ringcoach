@@ -32,7 +32,7 @@ internal data class CoachingSettings(
 }
 
 internal class JournalStore(context: Context, name: String = "ringcoach.db") :
-    SQLiteOpenHelper(context.applicationContext, name, null, 10) {
+    SQLiteOpenHelper(context.applicationContext, name, null, 11) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createJournalTable(db)
@@ -43,6 +43,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         createNutritionTable(db)
         PhotoMealStore.createTables(db)
         createProgressTable(db)
+        IncrementalNutritionStore.createTables(db)
     }
 
     private fun createProgressTable(db: SQLiteDatabase) {
@@ -160,7 +161,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        check(oldVersion in 1..9 && newVersion == 10) { "Unsupported database migration" }
+        check(oldVersion in 1..10 && newVersion == 11) { "Unsupported database migration" }
         // SQLiteOpenHelper runs the migration in a transaction.
         if (oldVersion == 1) {
             db.execSQL("ALTER TABLE journal_entries RENAME TO journal_entries_v1")
@@ -210,7 +211,9 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         """.trimIndent())
         }
         if (oldVersion < 9) PhotoMealStore.createTables(db)
-        createProgressTable(db)
+        if (oldVersion < 10) createProgressTable(db)
+        IncrementalNutritionStore.createTables(db)
+        IncrementalNutritionStore(db).migrateConfirmedPhotos()
     }
 
     @Synchronized
@@ -314,9 +317,9 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         } finally { db.endTransaction() }
     }
 
-    /** Append immutable dated input; re-analyze the whole day, never add a new estimate to an old total. */
+    /** Append immutable dated input and optionally queue an incremental food-state conversion. */
     @Synchronized
-    fun appendProgress(id: String, date: LocalDate, text: String, photoIds: List<String>): JournalEntry {
+    fun appendProgress(id: String, date: LocalDate, text: String, photoIds: List<String>, incremental: Boolean = false): JournalEntry {
         require(text.isNotBlank() || photoIds.isNotEmpty())
         require(text.length <= 12000 && photoIds.distinct().size == photoIds.size)
         val db = writableDatabase
@@ -328,6 +331,13 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             if (existing != null) {
                 require(existing == listOf(date.toString(), text.trim(), JSONArray(photoIds).toString()))
                 return readJournals("date = ?", arrayOf(date.toString())).single()
+            }
+            if (incremental) {
+                val day = readCoachingContext(date, "").nutritionDays.first { it.date == date }
+                if (day.result != null && day.status == "complete" && !day.photoConflict) {
+                    val old = readJournals("date = ?", arrayOf(date.toString())).firstOrNull()?.draft ?: JournalDraft(date)
+                    IncrementalNutritionStore(db).seed(date, day.result, old.diet, old.additional)
+                }
             }
             val photos = PhotoMealStore(db)
             for (photoId in photoIds) {
@@ -355,6 +365,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             """, arrayOf(date.toString(), id, saved.draft.diet, source))
             db.execSQL("INSERT INTO progress_submissions VALUES (?, ?, ?, ?, ?)",
                 arrayOf(id, date.toString(), text.trim(), JSONArray(photoIds).toString(), stamp))
+            if (incremental) IncrementalNutritionStore(db).enqueue(id, date, saved.draft.diet, source)
             db.setTransactionSuccessful()
             return saved
         } finally { db.endTransaction() }
@@ -362,11 +373,34 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
 
     @Synchronized
     fun nutritionPhotos(job: PendingNutrition): List<Pair<String, ByteArray>> {
+        if (job.turn != null) return IncrementalNutritionStore(readableDatabase).photos(job)
         if (!job.unified) return emptyList()
         val photos = PhotoMealStore(readableDatabase)
         return photos.list(job.date, job.date).filter {
             it.consumed && it.hasPhoto && job.source.contains("[照片 ${it.id}]")
         }.map { it.id to requireNotNull(photos.image(it.id)) }
+    }
+
+    @Synchronized
+    fun incrementalSubmissionIds(date: LocalDate, completedOnly: Boolean = false): List<String> = readableDatabase.rawQuery(
+        "SELECT t.submission_id FROM nutrition_turns t JOIN progress_submissions p ON p.id=t.submission_id " +
+            "WHERE t.date BETWEEN ? AND ? " + (if (completedOnly) "AND t.status='complete' " else "") + "ORDER BY p.rowid",
+        arrayOf(date.minusDays(6).toString(), date.toString()),
+    ).use { rows -> buildList { while (rows.moveToNext()) add(rows.getString(0)) } }
+
+    @Synchronized
+    fun hasUncoachedIncrementalProgress(date: LocalDate, latest: SavedCoachCard?): Boolean {
+        val covered = latest?.let { JSONObject(it.contextJson).optJSONArray("nutrition_turn_ids") } ?: JSONArray()
+        val ids = (0 until covered.length()).map { covered.getString(it) }.toSet()
+        return incrementalSubmissionIds(date).any { it !in ids }
+    }
+
+    @Synchronized
+    fun releaseConfirmedLegacyPhotos() {
+        val db = writableDatabase
+        db.beginTransaction()
+        try { IncrementalNutritionStore(db).migrateConfirmedPhotos(); db.setTransactionSuccessful() }
+        finally { db.endTransaction() }
     }
 
     @Synchronized
@@ -492,9 +526,12 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
 
     @Synchronized
     fun nextPendingNutrition(): PendingNutrition? {
+        IncrementalNutritionStore(readableDatabase).next()?.let { return it }
         return readableDatabase.rawQuery("""
             SELECT date, source_revision, source_diet, source_additional, unified FROM nutrition_extractions
-            WHERE status = 'pending' ORDER BY date LIMIT 1
+            WHERE status = 'pending' AND NOT EXISTS (
+                SELECT 1 FROM nutrition_turns t WHERE t.date = nutrition_extractions.date
+            ) ORDER BY date LIMIT 1
         """.trimIndent(), null).use {
             if (!it.moveToFirst()) null else PendingNutrition(
                 LocalDate.parse(it.getString(0)), it.getString(1), it.getString(2), it.getString(3), it.getInt(4) != 0,
@@ -504,6 +541,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
 
     @Synchronized
     fun applyNutritionExtraction(job: PendingNutrition, result: NutritionExtraction): Boolean {
+        if (job.turn != null) return IncrementalNutritionStore(writableDatabase).apply(job, result)
         val values = android.content.ContentValues().apply {
             put("status", "complete")
             put("result_json", result.toJson().toString())
@@ -514,12 +552,14 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
 
     @Synchronized
     fun failNutritionExtraction(job: PendingNutrition) {
+        if (job.turn != null) IncrementalNutritionStore(writableDatabase).fail(job)
         writableDatabase.execSQL("UPDATE nutrition_extractions SET status = 'failed' WHERE date = ? AND source_revision = ?",
             arrayOf(job.date.toString(), job.revision))
     }
 
     @Synchronized
     fun retryFailedNutrition() {
+        IncrementalNutritionStore(writableDatabase).retryFailed()
         writableDatabase.execSQL("UPDATE nutrition_extractions SET status = 'pending' WHERE status = 'failed'")
     }
 
@@ -531,8 +571,8 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             buildMap {
                 while (cursor.moveToNext()) {
                     val day = LocalDate.parse(cursor.getString(0))
-                    val result = if (cursor.isNull(2)) null else NutritionExtractor.decode(cursor.getString(2),
-                        nutritionSource(cursor.getString(3), cursor.getString(4)))
+                    val result = if (cursor.isNull(2)) IncrementalNutritionStore(readableDatabase).confirmed(day) else
+                        NutritionExtractor.decode(cursor.getString(2), nutritionSource(cursor.getString(3), cursor.getString(4)))
                     put(day, NutritionDay(day, cursor.getString(1), result,
                         photoMode = if (cursor.getInt(5) != 0) "unified" else null))
                 }
