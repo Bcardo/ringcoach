@@ -36,6 +36,7 @@ internal class PhotoMealViewModel(application: Application, private val state: S
     fun submitProgress(id: String, draft: JournalDraft, onSaved: (JournalEntry) -> Unit, onChanged: () -> Unit) = task {
         val text = listOf(draft.training, draft.diet, draft.additional).filter { it.isNotBlank() }.joinToString("\n")
         val entry = withContext(Dispatchers.IO) { store.appendProgress(id, draft.date, text, attachments, incremental = true) }
+        ProgressJob.schedule(getApplication())
         attachments = emptyList()
         state.remove<ArrayList<String>>("progress_photos")
         selected = null; preview = null; notes = ""; consumed = false

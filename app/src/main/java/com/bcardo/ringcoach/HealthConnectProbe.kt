@@ -50,6 +50,12 @@ internal data class MetricResult(
 )
 
 internal class HealthConnectProbe(private val client: HealthConnectClient) {
+    fun supportsBackgroundRead(): Boolean = client.features.getFeatureStatus(
+        HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_IN_BACKGROUND) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+
+    suspend fun hasBackgroundReadAccess(): Boolean = supportsBackgroundRead() &&
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND in client.permissionController.getGrantedPermissions()
+
     private class Metric<T : Record>(
         val kind: MetricKind,
         val type: KClass<T>,

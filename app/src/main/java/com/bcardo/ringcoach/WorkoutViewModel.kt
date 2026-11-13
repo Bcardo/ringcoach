@@ -15,7 +15,6 @@ import java.time.LocalDate
 
 internal class WorkoutViewModel(application: Application) : AndroidViewModel(application) {
     private val store = JournalStore(application)
-    private val credentials = QwenCredentials(application)
     private var requested = false
     private var retryRequested = false
 
@@ -47,9 +46,9 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
                     requested = false
                     if (retryRequested) {
                         retryRequested = false
-                        withContext(Dispatchers.IO) { store.retryFailedWorkouts() }
+                        withContext(Dispatchers.IO) { store.retryFailedWorkouts(); ProgressWorkStore(store.writableDatabase).clearRetries() }
+                        ProgressJob.schedule(getApplication(), replaceExisting = true)
                     }
-                    processPending()
                     val context = withContext(Dispatchers.IO) { store.readCoachingContext(date, "") }
                     baselines = context.exercises
                     records = context.workoutRecords
@@ -62,33 +61,6 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
                 notice = R.string.workout_load_failed
             } finally {
                 syncing = false
-            }
-        }
-    }
-
-    private suspend fun processPending() {
-        while (true) {
-            val job = withContext(Dispatchers.IO) { store.nextPendingWorkout() } ?: return
-            val key = withContext(Dispatchers.IO) { credentials.read() }
-            if (key == null) {
-                needsKey = true
-                return
-            }
-            try {
-                val result = withContext(Dispatchers.IO) {
-                    val baselines = store.readCoachingContext(job.date, "").exercises
-                    val prompt = getApplication<Application>().assets.open("workout-extraction.txt")
-                        .bufferedReader(Charsets.UTF_8).use { it.readText() }
-                    val response = QwenClient.post(WorkoutExtractor.request(job, baselines, prompt), key)
-                    WorkoutExtractor.decode(QwenClient.responseText(response), job.training, baselines.map { it.exercise }.toSet())
-                }
-                withContext(Dispatchers.IO) { store.applyWorkoutExtraction(job, result) }
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (_: Exception) {
-                withContext(Dispatchers.IO) { store.failWorkoutExtraction(job) }
-                notice = R.string.workout_parse_failed
-                return
             }
         }
     }
