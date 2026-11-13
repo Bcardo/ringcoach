@@ -18,7 +18,7 @@ class FourTabUiTest {
         assumeTrue(InstrumentationRegistry.getArguments().getString("ui_review") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val automation = instrumentation.uiAutomation
+        val automation = instrumentation.getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
         context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         fun nodes(): List<AccessibilityNodeInfo> {
             val result = mutableListOf<AccessibilityNodeInfo>()

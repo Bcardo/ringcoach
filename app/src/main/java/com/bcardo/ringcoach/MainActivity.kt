@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         val coach = ViewModelProvider(this)[CoachViewModel::class.java]
         coach.onForegroundChanged(true)
+        RecoveryReliability.observe(this, "app_resumed")
         coach.reload()
         coach.captureProgressHealth(foregroundProbe)
         ProgressJob.schedule(this)
