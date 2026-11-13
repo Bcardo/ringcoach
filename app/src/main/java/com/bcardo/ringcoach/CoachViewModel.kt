@@ -17,8 +17,8 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 
-internal class PreparedCoaching(val date: LocalDate, val context: JSONObject) {
-    val preview = ExportPreview(context.toString(2))
+internal class PreparedCoaching(val date: LocalDate, val context: JSONObject, val request: JSONObject) {
+    val preview = ExportPreview(request.toString(2))
 }
 
 internal class CoachViewModel(application: Application) : AndroidViewModel(application) {
@@ -61,6 +61,8 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
     var nightlySyncing by mutableStateOf(false)
         private set
     var nightlyNotice by mutableStateOf<String?>(null)
+        private set
+    var requestManifest by mutableStateOf<JSONObject?>(null)
         private set
 
     val busy: Boolean
@@ -215,10 +217,15 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     progressId?.let { json.put("progress_submission_id", it)
                         .put("progress_submission", requireNotNull(store.progressSubmission(it))) }
                     json.put("nutrition_turn_ids", org.json.JSONArray(store.incrementalSubmissionIds(date, completedOnly = true)))
-                    store.latestCoachCard()?.takeIf { it.date == date }?.let {
+                    store.latestCoachCard(date)?.let {
                         json.put("previous_advice", it.advice.toJson())
                     }
-                    json.put("nightly_recovery", SamsungNightlyReader.refresh(getApplication(), date))
+                    json.put("nightly_recovery", SamsungNightlyReader.refresh(getApplication(), date)
+                        .put("screen_reader_configured", SamsungHealthScreenReader.configured(getApplication()))
+                        .put("screen_reader_connected", SamsungHealthScreenReader.enabled))
+                    NightlyRecoveryStore(getApplication()).use { history ->
+                        json.put("recovery_history", CoachingRecoveryHistory.compact(history.history(date.minusDays(30), date.minusDays(1)), date))
+                    }
                     if (probe == null) {
                         json.put("telemetry_status", "unavailable")
                     } else {
@@ -232,14 +239,15 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     }
                     json
                 }
-                if (context.toString().toByteArray(Charsets.UTF_8).size > 128 * 1024) {
-                    notice = R.string.coach_context_too_large
-                } else {
-                    nightlySnapshot = context.optJSONObject("nightly_recovery")
-                    prepared = PreparedCoaching(date, context)
-                }
+                nightlySnapshot = context.optJSONObject("nightly_recovery")
+                val packaged = withContext(Dispatchers.IO) { CoachingRequestPackager.prepare(context, asset("coach-system.txt")) }
+                requestManifest = packaged.retainedContext.getJSONObject("request_manifest")
+                prepared = PreparedCoaching(date, packaged.retainedContext, packaged.request)
             } catch (exception: CancellationException) {
                 throw exception
+            } catch (exception: CoachingPayloadTooLarge) {
+                requestManifest = exception.manifest
+                notice = R.string.coach_context_too_large
             } catch (_: Exception) {
                 notice = R.string.coach_prepare_failed
             } finally {
@@ -267,7 +275,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
             try {
                 val advice = withContext(Dispatchers.IO) {
                     val key = credentials.read() ?: throw IOException("No saved credential")
-                    QwenClient.generate(reviewed.context, asset("coach-system.txt"), key)
+                    QwenClient.response(QwenClient.post(reviewed.request, key))
                 }
                 val result = SavedCoachCard(
                     reviewed.context.optString("progress_submission_id").ifBlank { UUID.randomUUID().toString() }, reviewed.date, Instant.now(), QWEN_MODEL,

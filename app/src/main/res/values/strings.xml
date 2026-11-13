@@ -103,7 +103,7 @@
     <string name="coach_history_archived">这是当时保存的建议，未根据后续日志或健康数据更新。</string>
     <string name="coach_history_show_input">查看当时的输入</string>
     <string name="coach_history_hide_input">收起当时的输入</string>
-    <string name="coach_history_input_help">以下为生成这张卡时保存的原始输入快照。</string>
+    <string name="coach_history_input_help">以下为保存的事实与覆盖记录；逐点心率未归档。旧版建议按当时格式保留。</string>
     <string name="app_name">RingCoach</string>
     <string name="nav_home">今日</string>
     <string name="nav_journal">日志</string>
@@ -149,9 +149,9 @@
     <string name="coach_preparing">正在准备数据…</string>
     <string name="coach_generating">千问正在生成建议…</string>
     <string name="coach_prepare_failed">无法准备教练数据，请重试。</string>
-    <string name="coach_context_too_large">教练上下文超过 128 KiB，请精简计划或日志后重试。</string>
+    <string name="coach_context_too_large">本次必要证据超过请求大小限制，尚未发送。进度已保存，未截断睡眠或心率数据。</string>
     <string name="coach_review_title">检查本次教练数据</string>
-    <string name="coach_review_help">点击生成后，将把下列计划、日志、参考记录和健康汇总发送至千问（Qwen3.8-Flash）。</string>
+    <string name="coach_review_help">点击生成后，将把下列计划、进度、健康汇总及可用睡眠区间和心率采样发送至千问。逐点心率仅用于本次分析，不保留在历史建议中。</string>
     <string name="coach_send">发送至千问并生成</string>
     <string name="coach_api_access_failed">千问拒绝了请求，请检查密钥、套餐和模型访问权限。</string>
     <string name="coach_api_quota">千问额度不足或请求过于频繁，请检查额度后重试。</string>
@@ -187,7 +187,7 @@
     <string name="settings_import_counts">包含 %1$d 天饮食记录和 %2$d 条训练基准。保存时会一并写入本机数据库。</string>
     <string name="settings_context_preview">检查教练上下文</string>
     <string name="settings_context_loading">正在读取上下文…</string>
-    <string name="settings_context_preview_help">从本机读取最近 7 天日志、饮食记录和最新训练基准。健康数据将在生成教练卡时补充。</string>
+    <string name="settings_context_preview_help">这是本机最近 7 天进度与计划预览。最终请求会另加健康证据，并按大小整理历史；实际使用与省略内容以每次建议的覆盖清单为准。</string>
     <string name="settings_context_close">关闭</string>
     <string name="settings_context_save_first">请先保存设置，再检查教练上下文。</string>
     <string name="settings_context_failed">无法读取教练上下文，请重试。</string>

@@ -85,6 +85,7 @@ internal fun JournalApp(
                             Text("更新于 ${coachCardTimestamp(it.createdAt)}", style = MaterialTheme.typography.bodySmall)
                             if (it.date != today) Text("这是 ${it.date} 的建议，今日尚未更新。")
                             it.advice.notes.forEach { note -> Text("• $note") }
+                            CoachingManifestPanel(runCatching { org.json.JSONObject(it.contextJson).optJSONObject("request_manifest") }.getOrNull())
                         }
                     }
                     "training" -> {
@@ -124,6 +125,7 @@ internal fun JournalApp(
                             workouts.notice?.let { Text(stringResource(it)) }
                             if (!coach.hasKey) Text("请在设置中配置千问密钥。")
                             coach.notice?.let { Text(stringResource(it)) }
+                            CoachingManifestPanel(coach.requestManifest)
                             OutlinedButton(enabled = coach.hasKey, onClick = {
                                 workouts.sync(today, retryFailed = true); nutrition.sync(today, retryFailed = true)
                                 if (coach.pendingProgressId == null) coach.queueProgress() else coach.allowProgressRetry()
@@ -226,6 +228,7 @@ private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewM
                     for ((title, rows) in listOf("训练" to card.advice.training, "饮食" to card.advice.diet, "依据" to card.advice.notes)) {
                         Text(title, style = MaterialTheme.typography.titleMedium); rows.forEach { Text("• $it") }
                     }
+                    CoachingManifestPanel(runCatching { org.json.JSONObject(card.contextJson).optJSONObject("request_manifest") }.getOrNull())
                 }
             }
         }, confirmButton = { TextButton(onClick = history::closeDetail) { Text("关闭") } })
