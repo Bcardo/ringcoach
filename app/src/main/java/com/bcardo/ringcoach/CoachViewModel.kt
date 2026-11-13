@@ -185,12 +185,12 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun refreshNightly(date: LocalDate = LocalDate.now(), readScreen: Boolean = false) {
+    fun refreshNightly(date: LocalDate = LocalDate.now(), readScreen: Boolean = false, forceScreen: Boolean = false) {
         if (nightlySyncing) return
         nightlySyncing = true
         viewModelScope.launch {
             try {
-                if (readScreen && SamsungHealthScreenReader.enabled) SamsungHealthScreenReader.capture()
+                if (readScreen && SamsungHealthScreenReader.enabled && (forceScreen || SamsungHealthScreenReader.needsCapture(getApplication()))) SamsungHealthScreenReader.capture(forceScreen)
                 nightlySnapshot = withContext(Dispatchers.IO) { SamsungNightlyReader.refresh(getApplication(), date) }
             }
             catch (e: CancellationException) { throw e }
@@ -361,6 +361,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
     private suspend fun persistCard(result: SavedCoachCard) {
         try {
             withContext(Dispatchers.IO) { store.saveCoachCard(result) }
+            RecoveryReliability.coached(getApplication(), result.date, JSONObject(result.contextJson))
             cardSaved = true
             val completed = JSONObject(result.contextJson).optString("progress_submission_id")
             if (completed.isNotBlank()) refreshPending()

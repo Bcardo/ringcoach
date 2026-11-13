@@ -36,7 +36,8 @@ class BackgroundProgressLiveTest {
                     .put("status", "synthetic_no_health_records").put("captured_at", Instant.now().toString()))
             }
             assertEquals(JobScheduler.RESULT_SUCCESS, ProgressJob.schedule(context, name))
-            val command = instrumentation.uiAutomation.executeShellCommand("cmd jobscheduler run -f ${context.packageName} 9273")
+            val command = instrumentation.getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+                .executeShellCommand("cmd jobscheduler run -f ${context.packageName} 9273")
             command.use { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).readBytes() }
             val deadline = System.currentTimeMillis() + 180_000
             var complete = false

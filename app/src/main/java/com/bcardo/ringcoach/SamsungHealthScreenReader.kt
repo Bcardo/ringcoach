@@ -15,7 +15,7 @@ import java.time.LocalDate
 /** Explicitly enabled fallback for the daily HRV summary absent from Samsung's SDK. */
 class SamsungHealthScreenReader : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
-    private var pending: CompletableDeferred<Boolean>? = null
+    @Volatile private var pending: CompletableDeferred<Boolean>? = null
     private var dayIndex = 0
     private var captureToday = LocalDate.now()
     private var lastAction = 0L
@@ -24,10 +24,11 @@ class SamsungHealthScreenReader : AccessibilityService() {
     private var captured = 0
     private var step = "starting"
     private var capturedToday = false
+    private var shape = JSONObject()
     private val tick = object : Runnable {
         override fun run() {
             if (pending == null) return
-            inspect()
+            try { inspect() } catch (_: Exception) { step = "reader_error"; finish(false) }
             if (pending != null) handler.postDelayed(this, 350)
         }
     }
@@ -39,9 +40,10 @@ class SamsungHealthScreenReader : AccessibilityService() {
                 android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }
         instance = this
+        RecoveryReliability.observe(this, "service_connected")
     }
-    override fun onDestroy() { if (instance === this) instance = null; finish(false); super.onDestroy() }
-    override fun onInterrupt() { finish(false) }
+    override fun onDestroy() { if (instance === this) instance = null; RecoveryReliability.observe(this, "service_destroyed"); finish(false, returnToApp = false); super.onDestroy() }
+    override fun onInterrupt() { RecoveryReliability.observe(this, "service_interrupted"); finish(false, returnToApp = false) }
     override fun onAccessibilityEvent(event: AccessibilityEvent?) { /* Poll only during an explicit capture. */ }
 
     private fun begin(): CompletableDeferred<Boolean> {
@@ -50,6 +52,10 @@ class SamsungHealthScreenReader : AccessibilityService() {
         pending = completion
         dayIndex = 0; captured = 0; capturedToday = false; captureToday = LocalDate.now(); stableFingerprint = null; step = "starting"
         lastAction = System.currentTimeMillis()
+        shape = JSONObject()
+        RecoveryReliability.observe(this, "capture_started")
+        getSharedPreferences("nightly-screen", MODE_PRIVATE).edit().putString("attempt_date", captureToday.toString())
+            .putLong("attempted_at", System.currentTimeMillis()).apply()
         try {
             startActivity(Intent("com.samsung.android.app.shealth.action.VITALITY_TODAY_VIEW_LAUNCH")
                 .setPackage(SAMSUNG_HEALTH_PACKAGE).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP))
@@ -59,16 +65,19 @@ class SamsungHealthScreenReader : AccessibilityService() {
         return completion
     }
 
-    private fun finish(success: Boolean) {
+    private fun finish(success: Boolean, returnToApp: Boolean = true) {
         val completion = pending ?: return
         pending = null
         handler.removeCallbacks(tick)
         NightlyRecoveryStore(this).use { it.status("samsung_health_screen", if (success) (if (captured > 0) "available" else "empty") else "capture_incomplete:$step") }
-        if (success && capturedToday) getSharedPreferences("nightly-screen", MODE_PRIVATE).edit()
+        RecoveryReliability.observe(this, "capture_finished", JSONObject().put("success", success).put("step", step)
+            .put("day_index", dayIndex).put("captured_days", captured).put("captured_target_date", capturedToday).put("shape", shape))
+        if (capturedToday) getSharedPreferences("nightly-screen", MODE_PRIVATE).edit()
             .putString("last_date", captureToday.toString()).putLong("completed_at", System.currentTimeMillis()).apply()
         completion.complete(success)
         // Resume the user's RingCoach workflow; never unlock or open another app.
-        try { startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)) }
+        try { if (returnToApp && SamsungPageSelection.canReturnToApp(rootInActiveWindow?.packageName?.toString()))
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)) }
         catch (_: Exception) { }
     }
 
@@ -89,20 +98,59 @@ class SamsungHealthScreenReader : AccessibilityService() {
         return false
     }
 
+    private fun openEnergy(all: List<AccessibilityNodeInfo>, viewport: Rect) {
+        step = "opening_energy_screen"
+        val drawer = all.firstOrNull { it.viewIdResourceName == id("drawer_icon") && it.contentDescription?.contains("收起") == true }
+        if (drawer != null && click(drawer)) return
+        val tile = all.firstOrNull { it.viewIdResourceName == id("vitality_tile_score_text") }
+            ?: all.firstOrNull { it.text?.toString()?.trim()?.let { label -> label == "能量得分" || label.equals("Energy score", true) } == true }
+        if (tile != null) {
+            val bounds = Rect().also(tile::getBoundsInScreen)
+            if (tile.isVisibleToUser && viewport.contains(bounds.centerX(), bounds.centerY()) && click(tile)) return
+            if (tile.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SHOW_ON_SCREEN.id)) {
+                lastAction = System.currentTimeMillis(); stableFingerprint = null; return
+            }
+        }
+        // The home dashboard may resume well below the Energy Score card in its recycled list.
+        val dashboard = all.firstOrNull { it.viewIdResourceName == id("new_me_recycler_view") }
+        if (dashboard?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) == true) {
+            lastAction = System.currentTimeMillis(); stableFingerprint = null; return
+        }
+        val scrolls = all.filter { it.isScrollable }.sortedByDescending {
+            val bounds = Rect().also(it::getBoundsInScreen)
+            bounds.width().toLong() * bounds.height()
+        }
+        if (scrolls.any { it.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_UP.id) }) {
+            lastAction = System.currentTimeMillis(); stableFingerprint = null
+        }
+    }
+
     private fun inspect() {
         if (LocalDate.now() != captureToday) { finish(false); return }
         val root = rootInActiveWindow ?: run { step = "awaiting_window"; return }
         if (root.packageName?.toString() != SAMSUNG_HEALTH_PACKAGE) { step = "awaiting_samsung_health"; return }
         if (System.currentTimeMillis() - lastAction < 650) return
         val all = nodes(root)
+        val rootBounds = Rect().also(root::getBoundsInScreen)
+        shape = JSONObject().put("view_ids", org.json.JSONArray(all.mapNotNull { it.viewIdResourceName }.distinct().take(64)))
+        when (SamsungPageSelection.route(all.mapNotNull { it.viewIdResourceName?.substringAfterLast('/') }.toSet())) {
+            SamsungPageSelection.Route.BACK_TO_HOME -> {
+                step = "returning_samsung_home"
+                if (performGlobalAction(GLOBAL_ACTION_BACK)) { lastAction = System.currentTimeMillis(); stableFingerprint = null }
+                return
+            }
+            SamsungPageSelection.Route.OPEN_ENERGY -> {
+                openEnergy(all, rootBounds)
+                return
+            }
+            SamsungPageSelection.Route.UNKNOWN -> { step = "unrecognized_samsung_screen"; return }
+            SamsungPageSelection.Route.ENERGY -> Unit
+        }
         val period = (all.firstOrNull { it.viewIdResourceName == id("switcher_period") }
             ?: all.firstOrNull { it.viewIdResourceName == id("text_button") })
             ?.let { nodes(it).mapNotNull { n -> n.text?.toString() }.joinToString("") }
         if (period == null) {
-            step = "opening_energy_screen"
-            val drawer = all.firstOrNull { it.viewIdResourceName == id("drawer_icon") && it.contentDescription?.contains("收起") == true }
-            if (drawer != null) { click(drawer); return }
-            click(all.firstOrNull { it.viewIdResourceName == id("vitality_tile_score_text") })
+            openEnergy(all, rootBounds)
             return
         }
         val expected = captureToday.minusDays(dayIndex.toLong())
@@ -112,7 +160,6 @@ class SamsungHealthScreenReader : AccessibilityService() {
             if (dayIndex == 0) click(all.firstOrNull { it.viewIdResourceName == id("date_right_btn") && it.isEnabled && it.isClickable })
             return
         }
-        val rootBounds = Rect().also(root::getBoundsInScreen)
         val noData = all.any {
             if (it.viewIdResourceName != id("no_data_text")) false else {
                 val bounds = Rect().also(it::getBoundsInScreen)
@@ -127,13 +174,18 @@ class SamsungHealthScreenReader : AccessibilityService() {
             nextDay(all)
             return
         }
-        val pages = all.filter { it.viewIdResourceName == id("contributor_trend_layout") }.filter {
-            val bounds = Rect().also(it::getBoundsInScreen)
-            bounds.width() > rootBounds.width() / 2
-        }
-        if (pages.size != 1) { step = "ambiguous_page"; return }
+        val pages = all.filter { it.viewIdResourceName == id("contributor_trend_layout") }
+        if (pages.isEmpty()) { openEnergy(all, rootBounds); return }
+        fun box(rect: Rect) = ScreenBox(rect.left, rect.top, rect.right, rect.bottom)
+        val boxes = pages.map { box(Rect().also(it::getBoundsInScreen)) to it.isVisibleToUser }
+        val selected = SamsungPageSelection.select(box(rootBounds), boxes)
+        shape = JSONObject().put("viewport", listOf(rootBounds.left, rootBounds.top, rootBounds.right, rootBounds.bottom).joinToString(","))
+            .put("view_ids", org.json.JSONArray(all.mapNotNull { it.viewIdResourceName }.distinct().take(64)))
+            .put("pages", org.json.JSONArray(boxes.map { (bounds, visible) -> JSONObject().put("bounds", listOf(bounds.left,bounds.top,bounds.right,bounds.bottom).joinToString(","))
+                .put("visible", visible) })).put("selected", selected ?: JSONObject.NULL)
+        if (selected == null) { step = "ambiguous_page"; return }
         step = "reading_daily_summary"
-        val page = nodes(pages.single())
+        val page = nodes(pages[selected])
         val scoreLabel = page.firstOrNull { it.viewIdResourceName == id("vitality_score_main_view") }?.contentDescription?.toString()
         val hrvLabel = page.firstOrNull { it.viewIdResourceName == id("last_shrv") }?.text?.toString()
         val fingerprint = "$period|$scoreLabel|$hrvLabel"
@@ -159,7 +211,7 @@ class SamsungHealthScreenReader : AccessibilityService() {
             store.replaceScreenDay(expected, records)
         }
         captured++
-        if (dayIndex == 0) capturedToday = true
+        if (dayIndex == 0) { capturedToday = true; RecoveryReliability.captured(this, captureToday) }
         nextDay(all)
     }
 
@@ -170,7 +222,7 @@ class SamsungHealthScreenReader : AccessibilityService() {
     }
 
     companion object {
-        private var instance: SamsungHealthScreenReader? = null
+        @Volatile private var instance: SamsungHealthScreenReader? = null
         val enabled: Boolean get() = instance != null
         fun configured(context: android.content.Context): Boolean {
             val services = android.provider.Settings.Secure.getString(context.contentResolver,
@@ -179,11 +231,20 @@ class SamsungHealthScreenReader : AccessibilityService() {
                 component.packageName == context.packageName && component.className == SamsungHealthScreenReader::class.java.name
             } == true }
         }
-        suspend fun capture(): Boolean {
+        fun needsCapture(context: android.content.Context): Boolean {
+            if (instance?.pending != null) return false
+            val preferences = context.getSharedPreferences("nightly-screen", MODE_PRIVATE)
+            val now = System.currentTimeMillis()
+            val today = LocalDate.now().toString()
+            if (preferences.getString("last_date", null) == today && now - preferences.getLong("completed_at", 0) in 0..3_600_000) return false
+            return preferences.getString("attempt_date", null) != today || now - preferences.getLong("attempted_at", 0) !in 0..60_000
+        }
+        suspend fun awaitActiveCapture() { instance?.pending?.let { withTimeoutOrNull(28_000) { it.await() } } }
+        suspend fun capture(force: Boolean = false): Boolean {
             val reader = instance ?: return false
             val preferences = reader.getSharedPreferences("nightly-screen", MODE_PRIVATE)
             val age = System.currentTimeMillis() - preferences.getLong("completed_at", 0)
-            if (preferences.getString("last_date", null) == LocalDate.now().toString() && age in 0..3_600_000) return true
+            if (!force && preferences.getString("last_date", null) == LocalDate.now().toString() && age in 0..3_600_000) return true
             val deferred = reader.begin()
             return try { withTimeoutOrNull(27_000) { deferred.await() } ?: false }
             finally { if (reader.pending === deferred) reader.finish(false) }

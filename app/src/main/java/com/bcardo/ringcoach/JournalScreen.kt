@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import java.time.LocalDate
@@ -26,6 +27,12 @@ internal fun JournalApp(
     val enabled = !journal.loading && !journal.saving && !journal.loadFailed && !photos.working
     val workRevision by ProgressRuntime.revision.collectAsState()
     val backgroundRunning by ProgressRuntime.running.collectAsState()
+    val readerRevision by RecoveryReliability.revision.collectAsState()
+    val appContext = LocalContext.current.applicationContext
+    LaunchedEffect(readerRevision, coach.foreground, coach.nightlySyncing) {
+        if (coach.foreground && !coach.nightlySyncing && SamsungHealthScreenReader.enabled && SamsungHealthScreenReader.needsCapture(appContext))
+            coach.refreshNightly(readScreen = true)
+    }
     val processing = photos.working || workouts.syncing || nutrition.syncing || coach.busy || backgroundRunning
     LaunchedEffect(workRevision, today) {
         coach.reload(); workouts.sync(today); nutrition.sync(today)
@@ -113,7 +120,7 @@ internal fun JournalApp(
                         JournalLoadState(journal)
                         ProgressComposer(journal, photos, enabled, today) {
                             photos.submitProgress(journal.submissionId, journal.draft, { entry ->
-                                journal.acceptSaved(entry); coach.queueProgress(); coach.captureProgressHealth(probe, entry.draft.date)
+                                journal.acceptSaved(entry); coach.queueProgress(); coach.refreshNightly(readScreen = true); coach.captureProgressHealth(probe, entry.draft.date)
                             }) {
                                 workouts.sync(today); nutrition.sync(today)
                             }

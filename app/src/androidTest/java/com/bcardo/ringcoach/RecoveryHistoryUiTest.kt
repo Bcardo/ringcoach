@@ -18,7 +18,7 @@ class RecoveryHistoryUiTest {
     @Test fun rangeSelectionDateInspectionAndReturnKeepFourTabs() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("ui_recovery") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val automation = instrumentation.uiAutomation
+        val automation = instrumentation.getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
         automation.serviceInfo = automation.serviceInfo.apply {
             flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
         }

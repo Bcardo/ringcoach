@@ -82,6 +82,7 @@ internal class ProgressProcessor(
                 store.latestCoachCard(pending.date)?.let { data.put("previous_advice", it.advice.toJson()) }
                 // Test databases never read the owner's Samsung data or recovery archive.
                 if (database == "ringcoach.db") {
+                    SamsungHealthScreenReader.awaitActiveCapture()
                     data.put("nightly_recovery", SamsungNightlyReader.refresh(context, pending.date)
                         .put("screen_reader_configured", SamsungHealthScreenReader.configured(context))
                         .put("screen_reader_connected", SamsungHealthScreenReader.enabled))
@@ -94,6 +95,7 @@ internal class ProgressProcessor(
                 currentCoroutineContext().ensureActive()
                 store.saveCoachCard(SavedCoachCard(pending.id, pending.date, Instant.now(), QWEN_MODEL,
                     COACH_PROMPT_VERSION, packaged.retainedContext.toString(), advice))
+                if (database == "ringcoach.db") RecoveryReliability.coached(context, pending.date, packaged.retainedContext)
                 work.clearRetry(task); ProgressRuntime.changed()
             }
             work.stage("complete")
