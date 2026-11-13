@@ -14,7 +14,6 @@ import java.time.LocalDate
 
 internal class NutritionViewModel(application: Application) : AndroidViewModel(application) {
     private val store = JournalStore(application)
-    private val credentials = QwenCredentials(application)
     private var requested = false
     private var retryRequested = false
     var days by mutableStateOf(emptyList<NutritionDay>())
@@ -39,12 +38,11 @@ internal class NutritionViewModel(application: Application) : AndroidViewModel(a
             try {
                 do {
                     requested = false
-                    refresh(date)
                     if (retryRequested) {
                         retryRequested = false
-                        withContext(Dispatchers.IO) { store.retryFailedNutrition() }
+                        withContext(Dispatchers.IO) { store.retryFailedNutrition(); ProgressWorkStore(store.writableDatabase).clearRetries() }
+                        ProgressJob.schedule(getApplication(), replaceExisting = true)
                     }
-                    processPending()
                     refresh(date)
                 } while (requested)
             } catch (exception: CancellationException) {
@@ -72,40 +70,6 @@ internal class NutritionViewModel(application: Application) : AndroidViewModel(a
             } catch (exception: CancellationException) { throw exception }
             catch (_: Exception) { notice = R.string.nutrition_load_failed }
             finally { syncing = false }
-        }
-    }
-
-    private suspend fun processPending() {
-        while (true) {
-            val job = withContext(Dispatchers.IO) { store.nextPendingNutrition() } ?: return
-            if (job.turn?.status == "failed") { notice = R.string.nutrition_parse_failed; return }
-            val key = withContext(Dispatchers.IO) { credentials.read() }
-            if (key == null) { needsKey = true; return }
-            try {
-                val parsed = withContext(Dispatchers.IO) {
-                    val prompt = getApplication<Application>().assets.open("nutrition-extraction.txt")
-                        .bufferedReader(Charsets.UTF_8).use { it.readText() }
-                    NutritionExtractor.extract(job, prompt, store.nutritionPhotos(job), key)
-                }
-                withContext(Dispatchers.IO) {
-                    if (store.applyNutritionExtraction(job, parsed) && job.turn == null) store.releaseConfirmedLegacyPhotos()
-                }
-            } catch (exception: CancellationException) {
-                throw exception
-            } catch (exception: Exception) {
-                withContext(Dispatchers.IO) { store.failNutritionExtraction(job) }
-                notice = when (exception) {
-                    is QwenHttpException -> when (exception.status) {
-                        401, 403 -> R.string.coach_api_access_failed
-                        429 -> R.string.coach_api_quota
-                        else -> R.string.coach_api_failed
-                    }
-                    is java.io.IOException -> R.string.coach_network_failed
-                    is IllegalArgumentException, is org.json.JSONException -> R.string.nutrition_invalid_response
-                    else -> R.string.nutrition_parse_failed
-                }
-                return
-            }
         }
     }
 

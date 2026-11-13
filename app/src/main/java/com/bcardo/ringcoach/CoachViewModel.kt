@@ -24,11 +24,46 @@ internal class PreparedCoaching(val date: LocalDate, val context: JSONObject, va
 internal class CoachViewModel(application: Application) : AndroidViewModel(application) {
     private val store = JournalStore(application)
     private val credentials = QwenCredentials(application)
+    private val healthReadGate = ForegroundReadGate()
+    var foreground by mutableStateOf(false)
+        private set
+    var waitingForHealthRead by mutableStateOf(false)
+        private set
+
+    fun onForegroundChanged(active: Boolean) { foreground = active; healthReadGate.update(active) }
+    var progressStage by mutableStateOf("idle")
+        private set
+    var progressError by mutableStateOf<String?>(null)
+        private set
+    private var capturingHealth = false
+
+    fun captureProgressHealth(probe: HealthConnectProbe?, date: LocalDate = LocalDate.now()) {
+        if (capturingHealth) return
+        capturingHealth = true
+        viewModelScope.launch {
+            try {
+                val dates = withContext(Dispatchers.IO) { listOfNotNull(store.nextPendingCoaching()?.date, date).distinct() }
+                for (target in dates) {
+                    val telemetry = if (probe == null) JSONObject().put("status", "unavailable") else
+                        healthReadGate.read(onWaiting = { waitingForHealthRead = it }) {
+                            withContext(Dispatchers.IO) { probe.coachingSnapshot(target) }
+                        }
+                    telemetry.put("captured_at", Instant.now().toString()).put("capture_mode", "foreground_live")
+                    withContext(Dispatchers.IO) {
+                        ProgressHealth.remember("ringcoach.db", target, telemetry)
+                        ProgressWorkStore(store.writableDatabase).putHealth(target, telemetry)
+                    }
+                }
+                ProgressJob.schedule(getApplication())
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) { notice = R.string.coach_prepare_failed }
+            finally { capturingHealth = false }
+        }
+    }
     var pendingProgressId by mutableStateOf<String?>(null)
         private set
     var pendingProgressDate by mutableStateOf<String?>(null)
         private set
-    private var attemptedProgressId: String? = null
 
     var keyInput by mutableStateOf("")
         private set
@@ -86,6 +121,9 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                 cardSaved = loaded.second != null
                 pendingProgressId = loaded.third?.id
                 pendingProgressDate = loaded.third?.date?.toString()
+                val state = withContext(Dispatchers.IO) { ProgressWorkStore(store.readableDatabase).state() }
+                progressStage = state.optString("stage", "idle")
+                progressError = state.optString("error_code").takeUnless { it.isBlank() || it == "null" }
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: Exception) {
@@ -117,6 +155,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                 keyInput = ""
                 hasKey = true
                 keyNotice = R.string.coach_key_saved
+                ProgressJob.schedule(getApplication())
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: Exception) {
@@ -190,16 +229,21 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun prepareProgress(probe: HealthConnectProbe?) {
-        val id = pendingProgressId ?: return
-        val date = pendingProgressDate?.let(LocalDate::parse) ?: return
-        if (busy || loadFailed || !hasKey || attemptedProgressId == id) return
-        attemptedProgressId = id
-        prepare(date, probe, autoGenerate = true, progressId = id)
+        captureProgressHealth(probe, pendingProgressDate?.let(LocalDate::parse) ?: LocalDate.now())
+        ProgressJob.schedule(getApplication())
     }
 
-    fun retryProgress(probe: HealthConnectProbe?) { attemptedProgressId = null; prepareProgress(probe) }
+    fun retryProgress(probe: HealthConnectProbe?) { allowProgressRetry(); captureProgressHealth(probe) }
 
-    fun allowProgressRetry() { attemptedProgressId = null; retryTick++ }
+    fun allowProgressRetry() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                store.retryFailedNutrition(); store.retryFailedWorkouts()
+                ProgressWorkStore(store.writableDatabase).clearRetries()
+            }
+            ProgressJob.schedule(getApplication(), replaceExisting = true); retryTick++
+        }
+    }
     var retryTick by mutableStateOf(0)
         private set
 
@@ -211,6 +255,13 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         viewModelScope.launch {
             try {
                 if (SamsungHealthScreenReader.enabled) SamsungHealthScreenReader.capture()
+                var telemetryStatus = "unavailable"
+                val telemetry = if (probe == null) null else try {
+                    healthReadGate.read(onWaiting = { waitingForHealthRead = it }) {
+                        withContext(Dispatchers.IO) { probe.coachingSnapshot(date) }
+                    }.also { telemetryStatus = "checked" }
+                } catch (exception: CancellationException) { throw exception }
+                catch (_: Exception) { telemetryStatus = "error"; null }
                 val context = withContext(Dispatchers.IO) {
                     val json = store.readyCoachingContext(date, asset("coaching-policy.md")).toJson()
                         .put("request_timezone", ZoneId.systemDefault().id)
@@ -226,17 +277,8 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     NightlyRecoveryStore(getApplication()).use { history ->
                         json.put("recovery_history", CoachingRecoveryHistory.compact(history.history(date.minusDays(30), date.minusDays(1)), date))
                     }
-                    if (probe == null) {
-                        json.put("telemetry_status", "unavailable")
-                    } else {
-                        try {
-                            json.put("telemetry", probe.coachingSnapshot(date)).put("telemetry_status", "checked")
-                        } catch (exception: CancellationException) {
-                            throw exception
-                        } catch (_: Exception) {
-                            json.put("telemetry_status", "error")
-                        }
-                    }
+                    json.put("telemetry_status", telemetryStatus)
+                    telemetry?.let { json.put("telemetry", it) }
                     json
                 }
                 nightlySnapshot = context.optJSONObject("nightly_recovery")

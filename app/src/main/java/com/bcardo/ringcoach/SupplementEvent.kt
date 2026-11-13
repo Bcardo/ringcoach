@@ -80,10 +80,17 @@ internal object SupplementState {
                     require(event.evidence.contains(it)) { "New supplement time must be quoted in its evidence" }
                 }
             }
+            if (old != event && event.status == "taken" && Regex("蛋白粉|乳清|protein\\s*(powder|shake)|whey|casein|鱼油|fish\\s*oil|软糖|gumm(y|ies)", RegexOption.IGNORE_CASE).containsMatchIn(event.name))
+                require(event.foodId != null) { "Consumed caloric supplement needs its own linked food fact" }
             event.foodId?.let { id ->
                 require(event.status == "taken")
                 val food = result.foodItems.singleOrNull { it.id == id }
                 require(food != null && food.submissionIds.any { it in event.submissionIds }) { "Supplement food link must resolve to the same consumption" }
+                fun normalized(text: String) = text.lowercase().replace(Regex("\\s+"), "")
+                val priorFood = turn.previous?.foodItems?.firstOrNull { it.id == id }
+                if (old != event || priorFood != food) require(normalized(event.name) in normalized(food.estimate.description + " " + food.portion)) {
+                    "Linked food must identify the supplement itself, not another food from the same submission"
+                }
             }
         }
     }

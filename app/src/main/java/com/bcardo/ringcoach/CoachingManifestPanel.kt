@@ -28,6 +28,8 @@ internal fun CoachingManifestPanel(manifest: JSONObject?) {
         Text("本次睡眠证据：${it.optInt("session_count")} 段记录、${it.optInt("stage_interval_count")} 段阶段、${it.optInt("heart_rate_sample_count")} 个心率采样点。")
     }
     manifest.optJSONObject("freshness")?.let { freshness ->
+        if (manifest.optString("health_capture_mode") == "retained_statistics")
+            Text("健康数据采集于 ${manifest.optString("health_captured_at")}；本次使用已保留的睡眠区间和心率统计，未发送逐点心率。")
         val missing = freshness.optJSONArray("missing_target_date_vendor_metrics")
         val labels = (0 until (missing?.length() ?: 0)).map { index ->
             if (missing!!.getString(index) == "sleeping_hrv") "今日睡眠 HRV" else "今日能量得分"
@@ -41,6 +43,7 @@ internal fun CoachingManifestPanel(manifest: JSONObject?) {
     for (index in 0 until (omissions?.length() ?: 0)) {
         val omission = omissions!!.getJSONObject(index)
         val label = when (omission.optString("section")) {
+            "current_night_raw_hr" -> "本次逐点心率（仅使用已保留的统计）"
             "historical_journal_text" -> "较早日志原文（使用结构化日记录）"
             "historical_food_item_details" -> "较早逐项食品说明（保留每日合计与来源）"
             "duplicate_supplement_copy" -> "重复补剂副本（补剂记录已单独提供）"

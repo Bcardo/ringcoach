@@ -22,6 +22,7 @@ internal data class NutritionExtraction(
     val revisedFoodIds: List<String> = emptyList(),
     val supplements: List<SupplementEvent> = emptyList(),
     val revisedSupplementIds: List<String> = emptyList(),
+    val totalsSource: String = "model_legacy",
 ) {
     val balance: Double?
         get() = values["intake_kcal"]?.value?.let { intake -> values["expenditure_kcal"]?.value?.let { intake - it } }
@@ -33,6 +34,7 @@ internal data class NutritionExtraction(
         put("food_items", JSONArray(foodItems.map { it.toJson() })).put("revised_food_ids", JSONArray(revisedFoodIds))
         put("supplement_events", JSONArray(supplements.map { it.toJson() }))
         put("revised_supplement_ids", JSONArray(revisedSupplementIds))
+        if (totalsSource != "model_legacy") put("totals_source", totalsSource)
     }
 }
 
@@ -75,14 +77,14 @@ internal object NutritionExtractor {
         post: (JSONObject, String) -> String = QwenClient::post): NutritionExtraction {
         val request = request(job, instructions, photos)
         val answer = QwenClient.responseText(post(request, key))
-        try { return decodeForJob(answer, job).also { DailyFoodState.validate(job, it) } } catch (invalid: Exception) {
+        try { return DailyFoodState.calculated(job, decodeForJob(answer, job)) } catch (invalid: Exception) {
             if (invalid !is IllegalArgumentException && invalid !is org.json.JSONException) throw invalid
-            // Repair a structurally invalid answer once, without accepting unsupported evidence or changing totals locally.
+            // Repair facts/provenance once. Complete validated food facts, not model arithmetic, determine totals.
             request.getJSONArray("messages")
                 .put(JSONObject().put("role", "assistant").put("content", answer))
                 .put(JSONObject().put("role", "user").put("content",
                     "上次结果未通过校验（${invalid.message ?: "结构或来源不符"}）。请重新输出完整JSON：evidence每行逐字引用原文；reported数值必须出现在evidence中。图片标签里的数字若未在用户文字中出现，必须用estimated并引用[照片 ID]，不能编造文字引用；计算合计也用estimated。旧food_items未被本次明确修正时必须逐字段原样复制。改变或移除的旧ID必须准确列入revised_food_ids；新ID用本次submission_id加冒号和编号，新source_submission_ids只含本次ID。修正项保留旧来源并追加本次ID。每日营养合计必须等于当前食品项之和。缺失用null，不用0。补剂同样保留未修改旧事件的所有字段与原始evidence，重复确认不改写旧事件。改动的补剂必须用本次new_input逐字引用名称及本次改动字段的证据。未改动的已知剂量/单位/时间保留旧值与来源，不强制在新证据中重述；新增字段的未知信息为null。准确列出revised_supplement_ids。"))
-            return decodeForJob(QwenClient.responseText(post(request, key)), job).also { DailyFoodState.validate(job, it) }
+            return DailyFoodState.calculated(job, decodeForJob(QwenClient.responseText(post(request, key)), job))
         }
     }
 
@@ -192,7 +194,7 @@ internal object NutritionExtractor {
         val json = JSONObject(content)
         val required = (NUTRITION_FIELDS + listOf("coverage", "scope_evidence", "unresolved")).toSet()
         val keys = json.keys().asSequence().toSet()
-        require(keys.containsAll(required) && keys.all { it in required || it in setOf("food_summary", "assumptions", "food_items", "revised_food_ids", "supplement_events", "revised_supplement_ids") })
+        require(keys.containsAll(required) && keys.all { it in required || it in setOf("food_summary", "assumptions", "food_items", "revised_food_ids", "supplement_events", "revised_supplement_ids", "totals_source") })
         val values = NUTRITION_FIELDS.associateWith { field ->
             val row = json.getJSONObject(field)
             require(row.keys().asSequence().toSet() == setOf("value", "kind", "evidence"))
@@ -245,8 +247,10 @@ internal object NutritionExtractor {
         val events = json.optJSONArray("supplement_events") ?: JSONArray()
         val supplementRevisions = json.optJSONArray("revised_supplement_ids") ?: JSONArray()
         require(events.length() <= 100 && supplementRevisions.length() <= 100)
+        val totalsSource = json.optString("totals_source", "model_legacy")
+        require(totalsSource in setOf("model_legacy", "local_food_fact_sum_v1"))
         return NutritionExtraction(values, coverage, scope, fragments, summary, assumptionTexts, foodItems, revisedIds,
             (0 until events.length()).map { SupplementEvent.decode(events.getJSONObject(it)) },
-            (0 until supplementRevisions.length()).map { supplementRevisions.getString(it) })
+            (0 until supplementRevisions.length()).map { supplementRevisions.getString(it) }, totalsSource)
     }
 }

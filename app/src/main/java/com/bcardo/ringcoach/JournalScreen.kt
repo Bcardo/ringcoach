@@ -24,12 +24,16 @@ internal fun JournalApp(
     var diagnostics by rememberSaveable { mutableStateOf(false) }
     var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
     val enabled = !journal.loading && !journal.saving && !journal.loadFailed && !photos.working
-    val processing = photos.working || workouts.syncing || nutrition.syncing || coach.busy
-    val extractionReady = nutrition.loaded && workouts.loaded && !nutrition.needsKey && !workouts.needsKey && nutrition.notice == null && workouts.notice == null &&
-        nutrition.days.none { it.status in setOf("pending", "failed") } && workouts.statuses.none { it.optString("status") != "complete" }
-    LaunchedEffect(coach.pendingProgressId, coach.retryTick, photos.working, workouts.syncing, nutrition.syncing, coach.busy, coach.hasKey, settings.busy, extractionReady) {
-        if (coach.pendingProgressId != null && !photos.working && !workouts.syncing && !nutrition.syncing &&
-            !coach.busy && coach.hasKey && !coach.loadFailed && !settings.busy && extractionReady) coach.prepareProgress(probe)
+    val workRevision by ProgressRuntime.revision.collectAsState()
+    val backgroundRunning by ProgressRuntime.running.collectAsState()
+    val processing = photos.working || workouts.syncing || nutrition.syncing || coach.busy || backgroundRunning
+    LaunchedEffect(workRevision, today) {
+        coach.reload(); workouts.sync(today); nutrition.sync(today)
+        if (tab == "history") coachHistory.reload()
+    }
+    LaunchedEffect(coach.progressStage, coach.pendingProgressDate, coach.foreground) {
+        if (coach.progressStage == "waiting_health" && coach.foreground)
+            coach.captureProgressHealth(probe, coach.pendingProgressDate?.let(LocalDate::parse) ?: today)
     }
     LaunchedEffect(tab, today) {
         workouts.sync(today); nutrition.sync(today)
@@ -79,6 +83,8 @@ internal fun JournalApp(
                         DailyIntakeCard(nutrition.days.firstOrNull { it.date == today }, nutrition.syncing,
                             coach.card?.takeIf { it.date == today })
                         if (processing) Text("正在更新摄入、训练计划与教练建议…")
+                        ProgressStatus(coach)
+                        if (coach.waitingForHealthRead) Text("进度已保存，返回 RingCoach 后继续读取健康数据并更新建议。")
                         if (coach.pendingProgressId != null && !processing) Text("有进度等待更新，可在日志中查看处理状态。")
                         coach.card?.let {
                             Text(if (coach.pendingProgressId != null) "上次教练建议 · 新进度尚未完成反馈" else "最新教练建议", style = MaterialTheme.typography.titleLarge)
@@ -105,21 +111,23 @@ internal fun JournalApp(
                     }
                     "journal" -> {
                         JournalLoadState(journal)
-                        ProgressComposer(journal, photos, enabled && !processing, today) {
+                        ProgressComposer(journal, photos, enabled, today) {
                             photos.submitProgress(journal.submissionId, journal.draft, { entry ->
-                                journal.acceptSaved(entry); coach.queueProgress()
+                                journal.acceptSaved(entry); coach.queueProgress(); coach.captureProgressHealth(probe, entry.draft.date)
                             }) {
-                                workouts.sync(today, retryFailed = true); nutrition.sync(today, retryFailed = true)
+                                workouts.sync(today); nutrition.sync(today)
                             }
                         }
                         if (processing) Text("正在结合当天记录与恢复数据更新…")
+                        ProgressStatus(coach)
+                        if (coach.waitingForHealthRead) Text("进度已保存，返回 RingCoach 后继续读取健康数据并更新建议。")
                         val failed = nutrition.notice != null || workouts.notice != null ||
                             nutrition.days.any { it.status == "failed" } || workouts.statuses.any { it.optString("status") == "failed" }
                         if (!processing && (failed || coach.pendingProgressId != null)) {
                             Text(when {
                                 nutrition.notice != null || nutrition.days.any { it.status == "failed" } -> "饮食分析未完成，因此摄入和教练建议尚未更新。已提交内容保留，无需再次输入。"
                                 workouts.notice != null || workouts.statuses.any { it.optString("status") == "failed" } -> "训练识别未完成。已提交内容保留，无需再次输入。"
-                                else -> "摄入和训练识别已完成，教练建议尚未更新。无需再次输入。"
+                                else -> "后台更新尚未完成，已提交内容保留，无需再次输入。"
                             })
                             nutrition.notice?.let { Text(stringResource(it)) }
                             workouts.notice?.let { Text(stringResource(it)) }
@@ -127,8 +135,8 @@ internal fun JournalApp(
                             coach.notice?.let { Text(stringResource(it)) }
                             CoachingManifestPanel(coach.requestManifest)
                             OutlinedButton(enabled = coach.hasKey, onClick = {
-                                workouts.sync(today, retryFailed = true); nutrition.sync(today, retryFailed = true)
-                                if (coach.pendingProgressId == null) coach.queueProgress() else coach.allowProgressRetry()
+                                workouts.sync(today); nutrition.sync(today)
+                                coach.allowProgressRetry(); coach.captureProgressHealth(probe)
                             }) { Text("重试更新") }
                         }
                     }
@@ -233,4 +241,24 @@ private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewM
             }
         }, confirmButton = { TextButton(onClick = history::closeDetail) { Text("关闭") } })
     }
+}
+
+@Composable
+private fun ProgressStatus(coach: CoachViewModel) {
+    if (coach.pendingProgressId == null) return
+    Text(when (coach.progressStage) {
+        "recognizing_intake" -> "正在后台识别摄入，可切换应用，稍后返回查看。"
+        "recognizing_workout" -> "正在后台识别训练，可稍后返回查看。"
+        "coaching" -> "正在后台生成教练建议，可稍后返回查看。"
+        "waiting_health" -> "进度已保存，返回应用后补充健康数据并继续处理。"
+        "retry_scheduled" -> "连接暂时失败，已安排自动重试。"
+        "blocked" -> when (coach.progressError) {
+            "credential_missing", "provider_access" -> "更新暂停，请在设置中检查千问密钥后重试。"
+            "provider_quota" -> "请求额度或频率受限，请稍后重试。"
+            "network", "provider_temporary" -> "连接多次失败，请检查网络后重试更新。"
+            "context_too_large" -> "本次必要证据超过请求大小限制，尚未发送。"
+            else -> "分析未能完成，内容已保存，可重试更新。"
+        }
+        else -> "进度已保存，等待后台处理；稍后重新打开查看最新结果。"
+    }, style = MaterialTheme.typography.bodySmall)
 }

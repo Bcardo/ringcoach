@@ -29,6 +29,7 @@ internal fun DailyIntakeCard(day: NutritionDay?, analyzing: Boolean, advice: Sav
                 Text("$label：$actual $unit")
             }
             Text(if (day?.result?.coverage == "daily_total") "使用已汇报的全天总量" else "截至目前已记录的摄入；未记录的食物不计入。", style = MaterialTheme.typography.bodySmall)
+            if (day?.result?.totalsSource == "local_food_fact_sum_v1") Text("合计由本机按食品项计算；食物成分与份量仍保留估算的不确定性。", style = MaterialTheme.typography.bodySmall)
             if (day?.status in setOf("pending", "failed") && day?.result != null) Text("上次已确认的摄入；本次新进度尚未计入。", style = MaterialTheme.typography.bodySmall)
             day?.result?.foodSummary?.takeIf { it.isNotBlank() }?.let {
                 Text("已计入的食物", style = MaterialTheme.typography.titleMedium)

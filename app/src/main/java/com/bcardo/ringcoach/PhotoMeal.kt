@@ -43,7 +43,7 @@ internal data class MealEstimate(
                 }
             }
             val questions = strings("questions")
-            if (values.values.any { it == null }) require(questions.isNotEmpty())
+            if (values.values.any { it == null }) require(questions.isNotEmpty()) { "Unknown food nutrients require an explicit clarification question" }
             return MealEstimate(description, values, strings("assumptions"), questions)
         }
     }

@@ -31,6 +31,8 @@ There is no RingCoach cloud backend. Normal model requests go directly from the 
 
 ## Limits and remaining work
 
+Incremental daily nutrient totals now come from local sums of validated food facts, with unknown nutrients preserved and new supplement food links checked. Health Connect preparation follows the resumed Activity lifecycle and repeats reads interrupted by app switching. See [progress recovery](progress-recovery.md) for exact retry behavior and remaining background-process limits.
+
 - Progress/supplements and on-demand Health Connect context use seven calendar days. Canonical recovery comparisons use the preceding 30 days; each series reports actual observed dates/counts, not an assumed complete month. Exercise baselines/latest recognized performance have their own applicable-date queries.
 - Schema 12 queues each new incremental submission atomically with its journal/nutrition job. Each submission gets a separately generated and saved feedback card after recognition; historical dates and failed/restarted work remain queued. Existing schema-11 cards retain their previous covered submissions. The model gets the triggering submission plus latest confirmed date context, including corrections already processed during backlog recovery.
 - Health Connect data is freshly read for coaching, not continuously copied as a raw historical database. If the source later removes records, the app retains prior coach snapshots, not a full raw backup.
