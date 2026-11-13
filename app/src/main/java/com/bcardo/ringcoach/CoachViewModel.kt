@@ -24,10 +24,9 @@ internal class PreparedCoaching(val date: LocalDate, val context: JSONObject) {
 internal class CoachViewModel(application: Application) : AndroidViewModel(application) {
     private val store = JournalStore(application)
     private val credentials = QwenCredentials(application)
-    private val progressPreferences = application.getSharedPreferences("automatic-coaching", android.content.Context.MODE_PRIVATE)
-    var pendingProgressId by mutableStateOf(progressPreferences.getString("pending_id", null))
+    var pendingProgressId by mutableStateOf<String?>(null)
         private set
-    var pendingProgressDate by mutableStateOf(progressPreferences.getString("pending_date", null))
+    var pendingProgressDate by mutableStateOf<String?>(null)
         private set
     private var attemptedProgressId: String? = null
 
@@ -78,17 +77,13 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
             try {
                 val loaded = withContext(Dispatchers.IO) {
                     val latest = store.latestCoachCard()
-                    Triple(credentials.read() != null, latest, store.hasUncoachedIncrementalProgress(LocalDate.now(), latest))
+                    Triple(credentials.read() != null, latest, store.nextPendingCoaching())
                 }
                 hasKey = loaded.first
                 card = loaded.second
                 cardSaved = loaded.second != null
-                val savedProgressId = loaded.second?.let { JSONObject(it.contextJson).optString("progress_submission_id") }
-                if (pendingProgressId != null && pendingProgressId == savedProgressId) {
-                    progressPreferences.edit().remove("pending_id").remove("pending_date").commit()
-                    pendingProgressId = null; pendingProgressDate = null
-                }
-                if (pendingProgressId == null && loaded.third) queueProgress(LocalDate.now())
+                pendingProgressId = loaded.third?.id
+                pendingProgressDate = loaded.third?.date?.toString()
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: Exception) {
@@ -178,12 +173,18 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun queueProgress(date: LocalDate) {
-        val id = UUID.randomUUID().toString()
-        if (progressPreferences.edit().putString("pending_id", id).putString("pending_date", date.toString()).commit()) {
-            pendingProgressDate = date.toString()
-            pendingProgressId = id
+    fun queueProgress() {
+        viewModelScope.launch {
+            try { refreshPending() }
+            catch (exception: CancellationException) { throw exception }
+            catch (_: Exception) { notice = R.string.coach_prepare_failed }
         }
+    }
+
+    private suspend fun refreshPending() {
+        val next = withContext(Dispatchers.IO) { store.nextPendingCoaching() }
+        pendingProgressDate = next?.date?.toString()
+        pendingProgressId = next?.id
     }
 
     fun prepareProgress(probe: HealthConnectProbe?) {
@@ -209,9 +210,10 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
             try {
                 if (SamsungHealthScreenReader.enabled) SamsungHealthScreenReader.capture()
                 val context = withContext(Dispatchers.IO) {
-                    val json = store.readCoachingContext(date, asset("coaching-policy.md")).toJson()
+                    val json = store.readyCoachingContext(date, asset("coaching-policy.md")).toJson()
                         .put("request_timezone", ZoneId.systemDefault().id)
-                    progressId?.let { json.put("progress_submission_id", it) }
+                    progressId?.let { json.put("progress_submission_id", it)
+                        .put("progress_submission", requireNotNull(store.progressSubmission(it))) }
                     json.put("nutrition_turn_ids", org.json.JSONArray(store.incrementalSubmissionIds(date, completedOnly = true)))
                     store.latestCoachCard()?.takeIf { it.date == date }?.let {
                         json.put("previous_advice", it.advice.toJson())
@@ -311,11 +313,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
             withContext(Dispatchers.IO) { store.saveCoachCard(result) }
             cardSaved = true
             val completed = JSONObject(result.contextJson).optString("progress_submission_id")
-            if (completed.isNotBlank() && progressPreferences.getString("pending_id", null) == completed) {
-                progressPreferences.edit().remove("pending_id").remove("pending_date").commit()
-                pendingProgressId = null
-                pendingProgressDate = null
-            }
+            if (completed.isNotBlank()) refreshPending()
             notice = R.string.coach_card_saved
         } catch (exception: CancellationException) {
             throw exception

@@ -73,6 +73,7 @@ internal object DailyFoodState {
 
     fun validate(job: PendingNutrition, result: NutritionExtraction) {
         val turn = job.turn ?: return
+        SupplementState.validate(job, result)
         val previous = turn.previous?.foodItems?.associateBy { it.id } ?: emptyMap()
         val current = result.foodItems.associateBy { it.id }
         require(current.size == result.foodItems.size && current.size <= 100) { "Duplicate food IDs" }

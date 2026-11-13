@@ -20,6 +20,8 @@ internal data class NutritionExtraction(
     val assumptions: List<String> = emptyList(),
     val foodItems: List<FoodFact> = emptyList(),
     val revisedFoodIds: List<String> = emptyList(),
+    val supplements: List<SupplementEvent> = emptyList(),
+    val revisedSupplementIds: List<String> = emptyList(),
 ) {
     val balance: Double?
         get() = values["intake_kcal"]?.value?.let { intake -> values["expenditure_kcal"]?.value?.let { intake - it } }
@@ -29,6 +31,8 @@ internal data class NutritionExtraction(
         put("coverage", coverage).put("scope_evidence", scopeEvidence).put("unresolved", JSONArray(unresolved))
         put("food_summary", foodSummary).put("assumptions", JSONArray(assumptions))
         put("food_items", JSONArray(foodItems.map { it.toJson() })).put("revised_food_ids", JSONArray(revisedFoodIds))
+        put("supplement_events", JSONArray(supplements.map { it.toJson() }))
+        put("revised_supplement_ids", JSONArray(revisedSupplementIds))
     }
 }
 
@@ -71,12 +75,13 @@ internal object NutritionExtractor {
         post: (JSONObject, String) -> String = QwenClient::post): NutritionExtraction {
         val request = request(job, instructions, photos)
         val answer = QwenClient.responseText(post(request, key))
-        try { return decodeForJob(answer, job).also { DailyFoodState.validate(job, it) } } catch (_: IllegalArgumentException) {
+        try { return decodeForJob(answer, job).also { DailyFoodState.validate(job, it) } } catch (invalid: Exception) {
+            if (invalid !is IllegalArgumentException && invalid !is org.json.JSONException) throw invalid
             // Repair a structurally invalid answer once, without accepting unsupported evidence or changing totals locally.
             request.getJSONArray("messages")
                 .put(JSONObject().put("role", "assistant").put("content", answer))
                 .put(JSONObject().put("role", "user").put("content",
-                    "上次结果未通过校验。请重新输出完整JSON：evidence每行逐字引用原文；reported数值必须出现在evidence中。图片标签里的数字若未在用户文字中出现，必须用estimated并引用[照片 ID]，不能编造文字引用；计算合计也用estimated。旧food_items未被本次明确修正时必须逐字段原样复制。改变或移除的旧ID必须准确列入revised_food_ids；新ID用本次submission_id加冒号和编号，新source_submission_ids只含本次ID。修正项保留旧来源并追加本次ID。每日营养合计必须等于当前食品项之和。缺失用null，不用0。"))
+                    "上次结果未通过校验（${invalid.message ?: "结构或来源不符"}）。请重新输出完整JSON：evidence每行逐字引用原文；reported数值必须出现在evidence中。图片标签里的数字若未在用户文字中出现，必须用estimated并引用[照片 ID]，不能编造文字引用；计算合计也用estimated。旧food_items未被本次明确修正时必须逐字段原样复制。改变或移除的旧ID必须准确列入revised_food_ids；新ID用本次submission_id加冒号和编号，新source_submission_ids只含本次ID。修正项保留旧来源并追加本次ID。每日营养合计必须等于当前食品项之和。缺失用null，不用0。补剂同样保留未修改旧事件的所有字段与原始evidence，重复确认不改写旧事件。改动的补剂必须用本次new_input逐字引用名称及本次改动字段的证据。未改动的已知剂量/单位/时间保留旧值与来源，不强制在新证据中重述；新增字段的未知信息为null。准确列出revised_supplement_ids。"))
             return decodeForJob(QwenClient.responseText(post(request, key)), job).also { DailyFoodState.validate(job, it) }
         }
     }
@@ -85,6 +90,7 @@ internal object NutritionExtractor {
     fun decodeForJob(content: String, job: PendingNutrition): NutritionExtraction {
         if (job.turn == null) return decode(content, job.source)
         val json = JSONObject(content)
+        require(json.has("supplement_events") && json.has("revised_supplement_ids")) { "Incremental result must include supplement events and revision IDs" }
         val marker = Regex("\\[照片 [^]]+]")
         for (field in MEAL_FIELDS) {
             val row = json.getJSONObject(field)
@@ -95,6 +101,21 @@ internal object NutritionExtractor {
                 val directlyQuoted = Regex("[0-9]+(?:\\.[0-9]+)?").findAll(outsideMarker).any { it.value.toDouble() == value }
                 if (!directlyQuoted) row.put("kind", "estimated")
             }
+        }
+        // A repeated report must not rewrite provenance when the actual event fields did not change.
+        val oldEvents = job.turn.previous?.supplements?.associateBy { it.id }.orEmpty()
+        val events = json.optJSONArray("supplement_events")
+        val unchanged = mutableSetOf<String>()
+        if (events != null) for (i in 0 until events.length()) {
+            val current = SupplementEvent.decode(events.getJSONObject(i))
+            val old = oldEvents[current.id] ?: continue
+            if (old.copy(evidence = current.evidence, submissionIds = current.submissionIds) == current) {
+                events.put(i, old.toJson())
+                unchanged.add(old.id)
+            }
+        }
+        json.optJSONArray("revised_supplement_ids")?.let { ids ->
+            json.put("revised_supplement_ids", JSONArray((0 until ids.length()).map { ids.getString(it) }.filter { it !in unchanged }))
         }
         return decode(json.toString(), job.source)
     }
@@ -146,7 +167,10 @@ internal object NutritionExtractor {
         if (job.turn != null) {
             properties.put("food_items", JSONObject().put("type", "array").put("items", FoodFact.schema()))
                 .put("revised_food_ids", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")))
+                .put("supplement_events", JSONObject().put("type", "array").put("items", SupplementEvent.schema()))
+                .put("revised_supplement_ids", JSONObject().put("type", "array").put("items", JSONObject().put("type", "string")))
             schema.getJSONArray("required").put("food_items").put("revised_food_ids")
+                .put("supplement_events").put("revised_supplement_ids")
         }
         return JSONObject().put("model", QWEN_MODEL).put("enable_thinking", false).put("max_tokens", if (job.turn == null) 3000 else 6500)
             .put("messages", JSONArray()
@@ -168,7 +192,7 @@ internal object NutritionExtractor {
         val json = JSONObject(content)
         val required = (NUTRITION_FIELDS + listOf("coverage", "scope_evidence", "unresolved")).toSet()
         val keys = json.keys().asSequence().toSet()
-        require(keys.containsAll(required) && keys.all { it in required || it in setOf("food_summary", "assumptions", "food_items", "revised_food_ids") })
+        require(keys.containsAll(required) && keys.all { it in required || it in setOf("food_summary", "assumptions", "food_items", "revised_food_ids", "supplement_events", "revised_supplement_ids") })
         val values = NUTRITION_FIELDS.associateWith { field ->
             val row = json.getJSONObject(field)
             require(row.keys().asSequence().toSet() == setOf("value", "kind", "evidence"))
@@ -218,6 +242,11 @@ internal object NutritionExtractor {
         val revisions = json.optJSONArray("revised_food_ids") ?: JSONArray()
         require(revisions.length() <= 100)
         val revisedIds = (0 until revisions.length()).map { revisions.getString(it) }
-        return NutritionExtraction(values, coverage, scope, fragments, summary, assumptionTexts, foodItems, revisedIds)
+        val events = json.optJSONArray("supplement_events") ?: JSONArray()
+        val supplementRevisions = json.optJSONArray("revised_supplement_ids") ?: JSONArray()
+        require(events.length() <= 100 && supplementRevisions.length() <= 100)
+        return NutritionExtraction(values, coverage, scope, fragments, summary, assumptionTexts, foodItems, revisedIds,
+            (0 until events.length()).map { SupplementEvent.decode(events.getJSONObject(it)) },
+            (0 until supplementRevisions.length()).map { supplementRevisions.getString(it) })
     }
 }

@@ -36,6 +36,10 @@ internal fun DailyIntakeCard(day: NutritionDay?, analyzing: Boolean, advice: Sav
             }
             day?.result?.assumptions?.take(4)?.forEach { Text("估算依据：$it", style = MaterialTheme.typography.bodySmall) }
             day?.result?.unresolved?.forEach { Text("待澄清：$it") }
+            day?.result?.supplements?.takeIf { it.isNotEmpty() }?.let { events ->
+                Text("已记录补剂", style = MaterialTheme.typography.titleMedium)
+                events.forEach { Text(supplementSummary(it)) }
+            }
             if (day?.photoConflict == true) Text("旧记录有文字与照片重叠；下次提交进度时会统一分析。")
             if (analyzing || incomplete) Text("饮食正在分析或有待确认项；确认后更新摄入与建议。")
             Text("今日饮食安排", style = MaterialTheme.typography.titleMedium)
