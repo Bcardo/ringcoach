@@ -7,6 +7,7 @@ internal data class ScreenBox(val left: Int, val top: Int, val right: Int, val b
 
 /** A pager can expose full-size offscreen siblings in the accessibility tree. Never guess on ties. */
 internal object SamsungPageSelection {
+    fun canReturnToApp(activePackage: String?): Boolean = activePackage == SAMSUNG_HEALTH_PACKAGE
     enum class Route { ENERGY, OPEN_ENERGY, BACK_TO_HOME, UNKNOWN }
     fun route(viewIds: Set<String>): Route = when {
         "vitality_main_view" in viewIds || "contributor_trend_layout" in viewIds -> Route.ENERGY

@@ -8,6 +8,8 @@ Samsung can resume a different detail page or a scrolled home dashboard when the
 
 When the service binds after Activity startup, a foreground observer requests the missed capture. A successful target-day capture is cached even if historical backfill later fails. Automatic retries have a short cooldown; explicit Settings refresh bypasses the success cache. Coaching may await an already active capture, but the background job never starts Samsung UI.
 
+Capture completion returns to RingCoach only while Samsung Health is still the active app. A timeout or interruption must not pull the owner back over another app they chose to use.
+
 `recovery-reliability` preferences keep at most 64 lifecycle/capture observations and 30 days of collection/coaching-presence metadata. They record enablement, connection, boot count, APK update time, capture phase, limited view identifiers/bounds and date-specific presence flags. They contain no UI text, readings, HR samples, photos, credentials or coach prose. These records show when a state was observed, not the exact time or cause of an unobserved disablement.
 
 ## Testing without disabling the reader

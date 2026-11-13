@@ -5,6 +5,12 @@ import org.junit.Test
 
 class SamsungPageSelectionTest {
     private val viewport = ScreenBox(0, 0, 1800, 2200)
+    @Test fun captureCompletionDoesNotReopenRingCoachOverAnotherApp() {
+        assertTrue(SamsungPageSelection.canReturnToApp(SAMSUNG_HEALTH_PACKAGE))
+        assertFalse(SamsungPageSelection.canReturnToApp("another.app"))
+        assertFalse(SamsungPageSelection.canReturnToApp("com.bcardo.ringcoach"))
+        assertFalse(SamsungPageSelection.canReturnToApp(null))
+    }
     @Test fun missingDataOnAnUnrelatedTrackerCannotEraseHrv() {
         assertEquals(SamsungPageSelection.Route.UNKNOWN, SamsungPageSelection.route(setOf("switcher_period", "no_data_text")))
         assertEquals(SamsungPageSelection.Route.ENERGY, SamsungPageSelection.route(setOf("vitality_main_view", "no_data_text")))

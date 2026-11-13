@@ -1,6 +1,6 @@
 package com.bcardo.ringcoach
 
-import android.app.Activity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -11,7 +11,7 @@ import java.time.LocalDate
 
 @Composable
 internal fun NightlyRecoveryPanel(coach: CoachViewModel, date: LocalDate, setup: Boolean = false) {
-    val activity = LocalContext.current as? Activity
+    val activity = LocalActivity.current
     Column {
         Text("昨夜恢复数据", style = MaterialTheme.typography.titleMedium)
         val records = coach.nightlySnapshot?.optJSONArray("records")

@@ -76,7 +76,8 @@ class SamsungHealthScreenReader : AccessibilityService() {
             .putString("last_date", captureToday.toString()).putLong("completed_at", System.currentTimeMillis()).apply()
         completion.complete(success)
         // Resume the user's RingCoach workflow; never unlock or open another app.
-        try { if (returnToApp) startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)) }
+        try { if (returnToApp && SamsungPageSelection.canReturnToApp(rootInActiveWindow?.packageName?.toString()))
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)) }
         catch (_: Exception) { }
     }
 
