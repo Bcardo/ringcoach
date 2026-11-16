@@ -32,7 +32,7 @@ internal data class CoachingSettings(
 }
 
 internal class JournalStore(context: Context, name: String = "ringcoach.db") :
-    SQLiteOpenHelper(context.applicationContext, name, null, 13) {
+    SQLiteOpenHelper(context.applicationContext, name, null, 14) {
 
     override fun onCreate(db: SQLiteDatabase) {
         createJournalTable(db)
@@ -44,6 +44,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         PhotoMealStore.createTables(db)
         createProgressTable(db)
         IncrementalNutritionStore.createTables(db)
+        IncrementalWorkoutStore.createTables(db)
         ProgressCoachingStore.createTable(db)
         ProgressWorkStore.createTables(db)
     }
@@ -163,7 +164,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        check(oldVersion in 1..12 && newVersion == 13) { "Unsupported database migration" }
+        check(oldVersion in 1..13 && newVersion == 14) { "Unsupported database migration" }
         // SQLiteOpenHelper runs the migration in a transaction.
         if (oldVersion == 1) {
             db.execSQL("ALTER TABLE journal_entries RENAME TO journal_entries_v1")
@@ -215,9 +216,10 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         if (oldVersion < 9) PhotoMealStore.createTables(db)
         if (oldVersion < 10) createProgressTable(db)
         IncrementalNutritionStore.createTables(db)
-        IncrementalNutritionStore(db).migrateConfirmedPhotos()
+        if (oldVersion < 13) IncrementalNutritionStore(db).migrateConfirmedPhotos()
         if (oldVersion < 12) ProgressCoachingStore.migrate(db)
         ProgressWorkStore.createTables(db)
+        IncrementalWorkoutStore.createTables(db)
     }
 
     @Synchronized
@@ -250,7 +252,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     @Synchronized
-    fun save(draft: JournalDraft): JournalEntry {
+    fun save(draft: JournalDraft, preserveWorkoutState: Boolean = false): JournalEntry {
         val clean = draft.trimmed()
         require(clean.hasContent || PhotoMealStore(readableDatabase).list(clean.date, clean.date).isNotEmpty()) { "Journal entry is empty" }
         val updated = Instant.now()
@@ -282,6 +284,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                 val previousTraining = previous?.get(0)
                 val appended = !previousTraining.isNullOrBlank() && clean.training.startsWith(previousTraining)
                 if (!appended) db.delete("exercise_logs", "date = ?", arrayOf(clean.date.toString()))
+                if (!preserveWorkoutState) IncrementalWorkoutStore(db).invalidate(clean.date)
                 db.execSQL("""
                     INSERT INTO workout_extractions (date, source_revision, status) VALUES (?, ?, ?)
                     ON CONFLICT(date) DO UPDATE SET source_revision = excluded.source_revision,
@@ -353,10 +356,11 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                 photos.edit(photoId, text.take(4000), true)
             }
             val previous = readJournals("date = ?", arrayOf(date.toString())).firstOrNull()?.draft ?: JournalDraft(date)
+            val incrementalWorkout = incremental && IncrementalWorkoutStore(db).prepareAppend(date, previous.training)
             val stamp = Instant.now().toString()
             val event = "[更新 $stamp · $id]\n" + text.trim() + photoIds.joinToString("") { "\n[照片 $it]" }
             fun append(old: String) = listOf(old, event).filter { it.isNotBlank() }.joinToString("\n\n")
-            val saved = save(previous.copy(training = append(previous.training), additional = append(previous.additional)))
+            val saved = save(previous.copy(training = append(previous.training), additional = append(previous.additional)), preserveWorkoutState = incrementalWorkout)
             // Include pre-redesign meals on the first unified update, preserving their notes and estimates as context.
             val meals = photos.list(date, date).filter { it.consumed }
             val legacy = meals.filter { !saved.draft.additional.contains("[照片 ${it.id}]") }.joinToString("\n") {
@@ -374,6 +378,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                 arrayOf(id, date.toString(), text.trim(), JSONArray(photoIds).toString(), stamp))
             if (incremental) {
                 IncrementalNutritionStore(db).enqueue(id, date, saved.draft.diet, source)
+                if (incrementalWorkout) IncrementalWorkoutStore(db).enqueue(id, date)
                 ProgressCoachingStore(db).enqueue(id)
             }
             db.setTransactionSuccessful()
@@ -669,6 +674,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
 
     @Synchronized
     fun retryFailedWorkouts() {
+        writableDatabase.execSQL("UPDATE workout_turns SET status='pending' WHERE status='failed'")
         writableDatabase.execSQL("UPDATE workout_extractions SET status = 'pending' WHERE status = 'failed'")
     }
 
@@ -677,7 +683,9 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         return readableDatabase.rawQuery("""
             SELECT j.date, j.training_revision, j.training, w.status FROM journal_entries AS j
             JOIN workout_extractions AS w ON w.date = j.date AND w.source_revision = j.training_revision
-            WHERE w.status IN (${if (includeFailed) "'pending','failed'" else "'pending'"}) ORDER BY j.date LIMIT 1
+            WHERE w.status IN (${if (includeFailed) "'pending','failed'" else "'pending'"})
+                AND NOT EXISTS (SELECT 1 FROM workout_turns t WHERE t.date=j.date AND t.status IN ('pending','failed'))
+            ORDER BY j.date LIMIT 1
         """.trimIndent(), null).use { cursor ->
             if (!cursor.moveToFirst()) return@use null
             val date = LocalDate.parse(cursor.getString(0))
@@ -731,8 +739,9 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
 
     @Synchronized
     fun latestWorkoutRecords(date: LocalDate): List<WorkoutRecord> {
+        val confirmed = mutableMapOf<String, List<ConfirmedWorkout>>()
         return readableDatabase.rawQuery("""
-            SELECT e.date, e.exercise, e.performance, e.evidence, e.status FROM exercise_logs AS e
+            SELECT e.date, e.exercise, e.performance, e.evidence, e.status, e.ordinal FROM exercise_logs AS e
             JOIN journal_entries AS j ON j.date = e.date
             WHERE e.status IN ('completed', 'partial')
                 AND (j.training_revision=e.source_revision OR (e.evidence!='' AND instr(j.training,e.evidence)>0)) AND e.date = (
@@ -744,9 +753,17 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         """.trimIndent(), arrayOf(date.toString())).use { cursor ->
             buildList {
                 while (cursor.moveToNext()) {
-                    add(WorkoutRecord(LocalDate.parse(cursor.getString(0)), WorkoutObservation(
+                    val day = cursor.getString(0)
+                    val observation = WorkoutObservation(
                         cursor.getString(1), cursor.getString(2), cursor.getString(3), cursor.getString(4),
-                    )))
+                    )
+                    val facts = confirmed.getOrPut(day) {
+                        readableDatabase.rawQuery("SELECT result_json FROM daily_workout_state WHERE date=?", arrayOf(day)).use { state ->
+                            if (state.moveToFirst()) WorkoutDayState.decode(JSONObject(state.getString(0))).records else emptyList()
+                        }
+                    }
+                    val fact = facts.getOrNull(cursor.getInt(5))?.takeIf { it.observation == observation }
+                    add(WorkoutRecord(LocalDate.parse(day), observation, fact?.sources.orEmpty(), fact?.updateEvidence))
                 }
             }
         }

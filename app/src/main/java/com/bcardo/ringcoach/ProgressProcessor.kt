@@ -43,6 +43,25 @@ internal class ProgressProcessor(
             }
             while (true) {
                 currentCoroutineContext().ensureActive()
+                val turns = IncrementalWorkoutStore(store.writableDatabase)
+                val turn = turns.next() ?: break
+                task = "workout:${turn.id}"; date = turn.date
+                if (turn.status == "failed") {
+                    work.stage("blocked", date, error = work.error(task) ?: "workout_failed"); return@use false
+                }
+                work.stage("recognizing_workout", date)
+                try {
+                    val baselines = store.readCoachingContext(turn.date, "").exercises
+                    val result = WorkoutDeltaExtractor.extract(turn, baselines, asset("workout-delta.txt"), key, post) { code, attempt, outcome ->
+                        if (database == "ringcoach.db") recordFailure("workout", code, attempt, outcome, WorkoutDeltaExtractor.VERSION)
+                    }
+                    currentCoroutineContext().ensureActive()
+                    turns.apply(turn, result); work.clearRetry(task); ProgressRuntime.changed()
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) { turns.fail(turn); throw e }
+            }
+            while (true) {
+                currentCoroutineContext().ensureActive()
                 val job = store.nextPendingWorkout(includeFailed = true) ?: break
                 task = "workout:${job.revision}"; date = job.date
                 if (job.status == "failed") {
@@ -130,8 +149,8 @@ internal class ProgressProcessor(
     }
 
     private fun asset(name: String): String = context.assets.open(name).bufferedReader(Charsets.UTF_8).use { it.readText() }
-    private fun recordFailure(stage: String, code: String, attempt: Int, outcome: String) {
-        try { ProcessingFailureStore(context).use { it.record(stage, code, attempt, outcome) } }
+    private fun recordFailure(stage: String, code: String, attempt: Int, outcome: String, prompt: String? = null) {
+        try { ProcessingFailureStore(context).use { it.record(stage, code, attempt, outcome, prompt) } }
         catch (_: Exception) { /* Diagnostics must never block or replace the processing result. */ }
     }
 }

@@ -29,9 +29,9 @@ class SupplementFeedbackStoreTest {
         val result = NutritionExtraction(NUTRITION_FIELDS.associateWith { NutritionValue(null, "missing", "") },
             "unknown", "", emptyList(), supplements = previous?.supplements.orEmpty() + event)
         assertTrue(store.applyNutritionExtraction(job, result))
-        val workout = store.nextPendingWorkout()!!
-        assertTrue(store.applyWorkoutExtraction(workout, WorkoutExtractor.decode(
-            """{"records":[],"unresolved":[]}""", workout.training, emptySet())))
+        val turns = IncrementalWorkoutStore(store.writableDatabase)
+        val workout = turns.next()!!
+        assertTrue(turns.apply(workout, workout.previous))
     }
     private fun save(store: JournalStore, id: String, date: LocalDate) {
         val json = store.readyCoachingContext(date, "").toJson().put("progress_submission_id", id)

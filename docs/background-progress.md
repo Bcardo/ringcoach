@@ -20,6 +20,8 @@ Network, provider 429, and provider 5xx failures get at most three failed attemp
 
 Schema 13 adds redacted health staging, durable stage/error state, and retry counts. It preserves the existing submission queue, converted facts, and saved coaching cards. Staging retains seven days plus dates still needed by pending feedback; it does not archive raw HR arrays or successful photo bytes.
 
+Schema 14 adds [incremental workout turns](incremental-workout-followups.md). New submissions on a confirmed date recognize only the new input against structured confirmed workout state. Questions and future plans can commit no changes; corrections/retractions target accepted IDs. State and displayed exercise records commit together, with ordered turns and stale-result protection. Existing unfinished legacy recognition is not silently marked complete by migration.
+
 ## Validation
 
 - JVM regression suite and debug/test APK builds.
