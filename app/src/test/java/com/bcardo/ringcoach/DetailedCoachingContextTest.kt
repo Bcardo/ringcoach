@@ -116,6 +116,31 @@ class DetailedCoachingContextTest {
         }
     }
 
+    @Test fun largeTraceFitsByLosslessFieldEncodingAndIsStillNeverArchived() {
+        val input = context()
+        val series = input.getJSONObject("telemetry").getJSONObject("current_night").getJSONArray("heart_rate_series").getJSONObject(0)
+        val samples = JSONArray((0 until 2000).map { index -> JSONObject()
+            .put("time", start.plusMillis(index * 1000L).toString()).put("beats_per_minute", 60.25 + index % 5)
+            .put("session_refs", JSONArray(listOf("first", "overlapping"))) })
+        series.put("samples", samples).put("sample_count", samples.length()).remove("session_refs")
+        val generous = CoachingRequestPackager.prepare(input, "Coach", 1_000_000)
+        val budget = generous.request.toString().toByteArray(Charsets.UTF_8).size - 40_000
+        val packed = CoachingRequestPackager.prepare(input, "Coach", budget)
+        assertTrue(packed.request.toString().toByteArray(Charsets.UTF_8).size <= budget)
+        val sent = JSONObject(packed.request.getJSONArray("messages").getJSONObject(1).getString("content"))
+            .getJSONObject("telemetry").getJSONObject("current_night").getJSONArray("heart_rate_series").getJSONObject(0)
+        assertEquals(listOf("time", "beats_per_minute", "session_refs"), (0 until sent.getJSONArray("sample_columns").length()).map { sent.getJSONArray("sample_columns").getString(it) })
+        val rows = sent.getJSONArray("samples")
+        assertEquals(samples.length(), rows.length())
+        repeat(samples.length()) { i ->
+            assertEquals(samples.getJSONObject(i).getString("time"), rows.getJSONArray(i).getString(0))
+            assertEquals(samples.getJSONObject(i).getDouble("beats_per_minute"), rows.getJSONArray(i).getDouble(1), 0.0)
+            assertEquals(samples.getJSONObject(i).getJSONArray("session_refs").toString(), rows.getJSONArray(i).getJSONArray(2).toString())
+        }
+        assertTrue(series.getJSONArray("samples").get(0) is JSONObject)
+        assertFalse(packed.retainedContext.getJSONObject("telemetry").getJSONObject("current_night").getJSONArray("heart_rate_series").getJSONObject(0).has("samples"))
+    }
+
     @Test fun missingTargetDayHrvAndDisconnectedReaderAreVisibleEvenWhenOldSyncSaysAvailable() {
         val input = context()
         input.getJSONObject("nightly_recovery").put("records", JSONArray().put(JSONObject().put("wake_date", date.minusDays(1).toString())

@@ -1,5 +1,7 @@
 # Nightly recovery and progress updates
 
+RingCoach also has an opt-in [direct Ring Bluetooth collector](ring-bluetooth-collection.md) for passive overnight transfers and automatic morning advice. Its windowed sensor statistics are retained separately from the Samsung daily summaries below. The Bluetooth pipeline does not depend on the screen reader for collection or morning coaching; same-night reference validation and multi-night production reliability remain pending.
+
 RingCoach reads Energy Score using Samsung Health Data SDK 1.1.0. A persisted Android job polls approximately every six hours; Android chooses the actual run times. Opening RingCoach or submitting progress also refreshes the data. The reader reconciles a seven-calendar-day window, including updates and deletions, in the app-private `nightly-recovery.db` database.
 
 Samsung's documented SDK does not expose the daily sleeping HRV component. The optional **RingCoach 睡眠 HRV 读取** accessibility service reads the exact daily summary from Samsung Health's Energy Score screen. The owner enables it once in Android Accessibility settings. During a RingCoach-initiated refresh it may briefly display Samsung Health, read up to seven dated nights, then return to RingCoach. It does not run a screen workflow from the background job or unlock the phone. An unopened or locked phone therefore has background Energy Score polling, with HRV caught up when RingCoach next opens or progress is submitted. Catch-up is limited to seven nights per capture.
@@ -28,7 +30,7 @@ Successful advice and its exact input snapshot are archived using the coaching u
 - The tested Fold7 returned Energy Score records with a null timezone offset and UTC-midnight calendar dates. The reader uses the UTC calendar date when that offset is absent, and the supplied offset when present. This mapping was checked against three consecutive days on the screen; the date basis remains in each record's metadata.
 - The API retains a floating-point score while Samsung Health displays an integer. Both are recorded with their source and precision, without treating them as independent measurements or a readiness change.
 - Samsung Health provenance alone does not establish Ring hardware attribution. Records retain that attribution as unverified rather than assuming every Samsung record comes from the Ring.
-- Direct secondary Bluetooth discovery succeeded on this Ring. The short subscription probe received no notifications and did not establish automatic HRV history retrieval. The working HRV integration uses Samsung Health's screen, not a decoded Bluetooth health-history protocol.
+- A later passive overnight research capture received feature-150 HRV and other health streams. RingCoach now includes that decoder and an opt-in collector, while keeping the exact daily sleeping-HRV screen reader independent. Older captured windows match the existing Samsung reference; the new wake date still needs a same-night reference. See [the protocol findings](galaxy-ring-bluetooth.md).
 
 ## Validation
 

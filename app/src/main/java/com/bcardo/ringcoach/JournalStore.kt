@@ -237,6 +237,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     @Synchronized
     fun saveSettings(settings: CoachingSettings): CoachingSettings {
         val clean = settings.trimmed()
+        StandingBreakfast.parse(clean.instructions)
         require(clean.instructions.isNotBlank()) { "Coaching instructions are empty" }
         writableDatabase.execSQL("""
             INSERT INTO coaching_settings (id, routine, diet, instructions) VALUES (1, ?, ?, ?)
@@ -278,7 +279,9 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             updated.toString(), updated.toString(), revision,
         ))
             if (changed) {
-                db.delete("exercise_logs", "date = ?", arrayOf(clean.date.toString()))
+                val previousTraining = previous?.get(0)
+                val appended = !previousTraining.isNullOrBlank() && clean.training.startsWith(previousTraining)
+                if (!appended) db.delete("exercise_logs", "date = ?", arrayOf(clean.date.toString()))
                 db.execSQL("""
                     INSERT INTO workout_extractions (date, source_revision, status) VALUES (?, ?, ?)
                     ON CONFLICT(date) DO UPDATE SET source_revision = excluded.source_revision,
@@ -337,7 +340,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                 return readJournals("date = ?", arrayOf(date.toString())).single()
             }
             if (incremental) {
-                val day = readCoachingContext(date, "").nutritionDays.first { it.date == date }
+                val day = readCoachingContext(date, "", includeStandingBreakfast = false).nutritionDays.first { it.date == date }
                 if (day.result != null && day.status == "complete" && !day.photoConflict) {
                     val old = readJournals("date = ?", arrayOf(date.toString())).firstOrNull()?.draft ?: JournalDraft(date)
                     IncrementalNutritionStore(db).seed(date, day.result, old.diet, old.additional)
@@ -495,7 +498,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     @Synchronized
-    fun readCoachingContext(date: LocalDate, defaultInstructions: String): CoachingContext {
+    fun readCoachingContext(date: LocalDate, defaultInstructions: String, includeStandingBreakfast: Boolean = true): CoachingContext {
         val db = readableDatabase
         db.beginTransactionNonExclusive()
         try {
@@ -535,7 +538,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
                     }
                 }
             }
-            val dailyNutrition = nutritionDays(date, nutrition)
+            val dailyNutrition = nutritionDays(date, nutrition, includeStandingBreakfast)
             val context = CoachingContext(
                 date, readSettings(defaultInstructions),
                 readJournals("date BETWEEN ? AND ?", arrayOf(date.minusDays(6).toString(), date.toString())),
@@ -551,7 +554,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
 
     @Synchronized
     fun nextPendingNutrition(): PendingNutrition? {
-        IncrementalNutritionStore(readableDatabase).next()?.let { return it }
+        IncrementalNutritionStore(readableDatabase).next()?.let { return withMealPlan(it) }
         return readableDatabase.rawQuery("""
             SELECT date, source_revision, source_diet, source_additional, unified FROM nutrition_extractions
             WHERE status = 'pending' AND NOT EXISTS (
@@ -561,7 +564,55 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             if (!it.moveToFirst()) null else PendingNutrition(
                 LocalDate.parse(it.getString(0)), it.getString(1), it.getString(2), it.getString(3), it.getInt(4) != 0,
             )
+        }?.let(::withMealPlan)
+    }
+
+    private fun withMealPlan(job: PendingNutrition): PendingNutrition {
+        val saved = readSettings("")
+        return job.copy(dietPlan = saved.diet, breakfastRule = StandingBreakfast.parse(saved.instructions)?.takeIf { job.date >= it.effectiveDate })
+    }
+
+    @Synchronized
+    fun breakfastReconciliationInput(date: LocalDate): JSONObject? {
+        val rule = StandingBreakfast.parse(readSettings("").instructions)?.takeIf { date >= it.effectiveDate } ?: return null
+        val row = rawBreakfastState(date) ?: return null
+        val state = NutritionExtractor.decode(row.first, nutritionSource(row.second, row.third))
+        if (state.breakfast != null || state.coverage == "daily_total" || (state.foodItems.isEmpty() && MEAL_FIELDS.all { state.values[it]?.value == null })) return null
+        return JSONObject().put("date", date.toString()).put("standing_breakfast_rule", rule.toJson())
+            .put("confirmed_state", JSONObject(row.first)).put("journal_input", nutritionSource(row.second, row.third))
+    }
+
+    private fun rawBreakfastState(date: LocalDate): Triple<String, String, String>? {
+        val complete = readableDatabase.rawQuery("SELECT status FROM nutrition_extractions WHERE date=?", arrayOf(date.toString())).use {
+            !it.moveToFirst() || it.getString(0) == "complete"
         }
+        if (!complete) return null
+        val confirmed = readableDatabase.rawQuery("SELECT result_json,source_diet,source_additional FROM daily_food_state WHERE date=?", arrayOf(date.toString())).use {
+            if (it.moveToFirst()) Triple(it.getString(0), it.getString(1), it.getString(2)) else null
+        }
+        return confirmed ?: readableDatabase.rawQuery("SELECT result_json,source_diet,source_additional FROM nutrition_extractions WHERE date=? AND status='complete' AND result_json IS NOT NULL", arrayOf(date.toString())).use {
+            if (it.moveToFirst()) Triple(it.getString(0), it.getString(1), it.getString(2)) else null
+        }
+    }
+
+    @Synchronized
+    fun applyBreakfastReconciliation(date: LocalDate, expected: JSONObject, resolution: BreakfastResolution): Boolean {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val row = rawBreakfastState(date) ?: return false
+            val current = JSONObject(row.first)
+            if (current.has("breakfast_override") || current.toString() != expected.toString()) return false
+            require(resolution.foodIds.all { id -> current.optJSONArray("food_items")?.let { foods ->
+                (0 until foods.length()).any { foods.getJSONObject(it).getString("id") == id }
+            } ?: false })
+            val updated = current.put("breakfast_override", resolution.toJson()).toString()
+            db.execSQL("UPDATE daily_food_state SET result_json=? WHERE date=? AND result_json=?", arrayOf(updated, date.toString(), row.first))
+            db.execSQL("UPDATE nutrition_extractions SET result_json=? WHERE date=? AND status='complete' AND result_json=?", arrayOf(updated, date.toString(), row.first))
+            db.execSQL("UPDATE nutrition_turns SET result_json=? WHERE submission_id=(SELECT submission_id FROM daily_food_state WHERE date=?) AND result_json=?", arrayOf(updated, date.toString(), row.first))
+            db.setTransactionSuccessful()
+            return true
+        } finally { db.endTransaction() }
     }
 
     @Synchronized
@@ -588,7 +639,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         writableDatabase.execSQL("UPDATE nutrition_extractions SET status = 'pending' WHERE status = 'failed'")
     }
 
-    private fun nutritionDays(date: LocalDate, references: List<NutritionReference>): List<NutritionDay> {
+    private fun nutritionDays(date: LocalDate, references: List<NutritionReference>, includeStandingBreakfast: Boolean = true): List<NutritionDay> {
         val parsed = readableDatabase.rawQuery("""
             SELECT date, status, result_json, source_diet, source_additional, unified FROM nutrition_extractions
             WHERE date BETWEEN ? AND ? ORDER BY date
@@ -605,12 +656,14 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
         }
         val photos = PhotoMealStore(readableDatabase)
         val meals = photos.list(date.minusDays(6), date).groupBy { it.date }
+        val breakfast = StandingBreakfast.parse(readSettings("").instructions)
         return (0L..6L).map { offset ->
             val day = date.minusDays(offset)
             val base = parsed[day] ?: references.firstOrNull { it.date == day }?.let { NutritionDay(day, "reference", reference = it) }
                 ?: NutritionDay(day, "missing")
-            if (base.photoMode == "unified") base.copy(photoMeals = meals[day]?.filter { it.consumed } ?: emptyList())
-            else MealNutrition.merge(base, meals[day] ?: emptyList(), photos.mode(day))
+            val merged = if (base.photoMode == "unified") base.copy(photoMeals = meals[day]?.filter { it.consumed } ?: emptyList())
+                else MealNutrition.merge(base, meals[day] ?: emptyList(), photos.mode(day))
+            if (includeStandingBreakfast) StandingBreakfastProjection.apply(merged, breakfast) else merged
         }
     }
 
@@ -620,14 +673,23 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     }
 
     @Synchronized
-    fun nextPendingWorkout(): PendingWorkout? {
+    fun nextPendingWorkout(includeFailed: Boolean = false): PendingWorkout? {
         return readableDatabase.rawQuery("""
-            SELECT j.date, j.training_revision, j.training FROM journal_entries AS j
+            SELECT j.date, j.training_revision, j.training, w.status FROM journal_entries AS j
             JOIN workout_extractions AS w ON w.date = j.date AND w.source_revision = j.training_revision
-            WHERE w.status = 'pending' ORDER BY j.date LIMIT 1
+            WHERE w.status IN (${if (includeFailed) "'pending','failed'" else "'pending'"}) ORDER BY j.date LIMIT 1
         """.trimIndent(), null).use { cursor ->
             if (!cursor.moveToFirst()) return@use null
-            PendingWorkout(LocalDate.parse(cursor.getString(0)), cursor.getString(1), cursor.getString(2))
+            val date = LocalDate.parse(cursor.getString(0))
+            val source = cursor.getString(2)
+            val confirmed = readableDatabase.rawQuery("SELECT exercise,performance,evidence,status FROM exercise_logs WHERE date=? ORDER BY ordinal",
+                arrayOf(date.toString())).use { rows -> buildList {
+                while (rows.moveToNext()) {
+                    val evidence = rows.getString(2)
+                    if (evidence.isNotBlank() && source.contains(evidence)) add(WorkoutObservation(rows.getString(0), rows.getString(1), evidence, rows.getString(3)))
+                }
+            } }
+            PendingWorkout(date, cursor.getString(1), source, cursor.getString(3), confirmed)
         }
     }
 
@@ -671,11 +733,13 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
     fun latestWorkoutRecords(date: LocalDate): List<WorkoutRecord> {
         return readableDatabase.rawQuery("""
             SELECT e.date, e.exercise, e.performance, e.evidence, e.status FROM exercise_logs AS e
-            JOIN journal_entries AS j ON j.date = e.date AND j.training_revision = e.source_revision
-            WHERE e.status IN ('completed', 'partial') AND e.date = (
+            JOIN journal_entries AS j ON j.date = e.date
+            WHERE e.status IN ('completed', 'partial')
+                AND (j.training_revision=e.source_revision OR (e.evidence!='' AND instr(j.training,e.evidence)>0)) AND e.date = (
                 SELECT MAX(x.date) FROM exercise_logs AS x
-                JOIN journal_entries AS s ON s.date = x.date AND s.training_revision = x.source_revision
+                JOIN journal_entries AS s ON s.date = x.date
                 WHERE x.exercise = e.exercise AND x.status IN ('completed', 'partial') AND x.date <= ?
+                    AND (s.training_revision=x.source_revision OR (x.evidence!='' AND instr(s.training,x.evidence)>0))
             ) ORDER BY e.exercise, e.ordinal
         """.trimIndent(), arrayOf(date.toString())).use { cursor ->
             buildList {

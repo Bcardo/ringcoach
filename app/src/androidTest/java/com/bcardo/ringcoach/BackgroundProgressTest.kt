@@ -182,4 +182,45 @@ class BackgroundProgressTest {
         }
         assertFalse(ProgressRuntime.running.value)
     } }
+
+    @Test fun workoutValidationRepairCompletesQuestionWithoutReplayingNutrition() = isolated { name -> runBlocking {
+        seed(name)
+        var nutritionCalls = 0
+        var workoutCalls = 0
+        var coachCalls = 0
+        assertFalse(processor(name) { request, _ ->
+            when (request.getJSONObject("response_format").getJSONObject("json_schema").getString("name")) {
+                "daily_nutrition" -> { nutritionCalls++; reply(request) }
+                "workout_actuals" -> {
+                    workoutCalls++
+                    if (workoutCalls == 1) envelope(JSONObject().put("records", JSONArray()).put("unresolved", JSONArray(listOf("paraphrased question"))))
+                    else reply(request)
+                }
+                else -> { coachCalls++; reply(request) }
+            }
+        }.run())
+        assertEquals(1, nutritionCalls); assertEquals(2, workoutCalls); assertEquals(1, coachCalls)
+        JournalStore(context, name).use { store ->
+            assertNull(store.nextPendingCoaching()); assertEquals("one", store.latestCoachCard()!!.id)
+            assertNotNull(store.progressSubmission("one"))
+        }
+        assertFalse(processor(name) { _, _ -> error("Completed input replayed") }.run())
+    } }
+
+    @Test fun failedWorkoutRetainsValidationReasonAcrossAppReopenWithoutLooping() = isolated { name -> runBlocking {
+        seed(name)
+        var workouts = 0
+        assertFalse(processor(name) { request, _ ->
+            if (request.getJSONObject("response_format").getJSONObject("json_schema").getString("name") == "workout_actuals") {
+                workouts++
+                envelope(JSONObject().put("records", JSONArray()).put("unresolved", JSONArray(listOf("unsupported paraphrase"))))
+            } else reply(request)
+        }.run())
+        assertEquals(2, workouts)
+        assertFalse(processor(name) { _, _ -> error("Blocked validation retried without authorization") }.run())
+        JournalStore(context, name).use { store ->
+            assertEquals("workout_clarification_not_in_source", ProgressWorkStore(store.readableDatabase).state().getString("error_code"))
+            assertNotNull(store.nextPendingCoaching()); assertNull(store.latestCoachCard())
+        }
+    } }
 }

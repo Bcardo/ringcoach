@@ -87,6 +87,23 @@ class DailyFoodStateTest {
         assertEquals(165.0, parsed.values.getValue("intake_kcal").value!!, 0.0)
     }
 
+    @Test fun unchangedFoodExplanationsRetainTheirOriginalWordingAndSource() {
+        val old = food("old:1")
+        val previous = result(listOf(old))
+        val changedWording = old.copy(estimate = old.estimate.copy(assumptions = listOf("改写估算说明"), questions = listOf("重复问题")))
+        val raw = result(listOf(changedWording, food("next:1")))
+        val parsed = NutritionExtractor.decodeForJob(raw.toJson().toString(), job(previous))
+        assertEquals(old, parsed.foodItems.first())
+        DailyFoodState.validate(job(previous), parsed)
+        val corrected = changedWording.copy(submissionIds = listOf("old", "next"))
+        val revised = result(listOf(corrected), listOf(old.id))
+        assertEquals(corrected, NutritionExtractor.decodeForJob(revised.toJson().toString(), job(previous)).foodItems.single())
+        val badNutrients = changedWording.copy(estimate = changedWording.estimate.copy(values = changedWording.estimate.values + ("intake_kcal" to 999.0)))
+        val drift = NutritionExtractor.decodeForJob(result(listOf(badNutrients)).toJson().toString(), job(previous))
+        try { DailyFoodState.validate(job(previous), drift); fail("Unrequested nutrient drift accepted") }
+        catch (_: IllegalArgumentException) { }
+    }
+
     @Test fun invalidOldFoodDriftGetsOneRepairWithoutAnyOldImage() {
         val old = food("old:1")
         val job = job(result(listOf(old)))

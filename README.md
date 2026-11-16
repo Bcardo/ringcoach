@@ -1,5 +1,9 @@
 # RingCoach
 
+An explicitly saved [daily default breakfast](docs/standing-breakfast.md) can now be counted once per date without a daily report, labeled as assumed. Confirmations do not duplicate it; dated skipped/replacement/portion-change reports override it. The recognizer receives saved recipe references, and the nutrition table and coach share the same adjusted totals.
+
+Opt-in [direct Ring Bluetooth sleep collection](docs/ring-bluetooth-collection.md) now saves dated sensor records locally and queues one sleep-informed morning coaching update per new wake date. Ring summaries also accompany progress-triggered advice. A visible foreground notification, reconnect handling and explicit freshness/validation labels support collection; production multi-night reliability remains pending.
+
 Saved progress now uses local nutrient sums after food/source/link validation. Switching apps defers foreground-only health reads and resumes them when RingCoach returns, preserving the existing submission. See [progress recovery and retry behavior](docs/progress-recovery.md).
 
 New advice includes an expandable data-coverage summary, with current-night sleep intervals and transient HR samples, prior 30-day archived recovery comparisons and explicit freshness/omission counts. Missing current-day HRV and disabled screen reading are visible. Saved advice retains sleep intervals and HR statistics, not HR sample streams. See [coaching evidence, request limits and retention](docs/coaching-request-context.md).
@@ -23,6 +27,7 @@ The Fold7 owner completed the Samsung SDK read-mode agreement, Energy Score read
 | In the background | An Android job requests Energy Score about every six hours, with a one-hour scheduling flex. Android may delay execution during idle/power-saving conditions. This job does not open Samsung Health, capture HRV, or call Qwen. |
 | Open RingCoach | Refreshes Energy Score and, if the accessibility reader is enabled, catches up the last seven calendar days of daily HRV/score summaries. Returning to an already-open app also refreshes after five minutes away or when the date changes. |
 | Submit progress with **提交更新** | Saves the inputs, waits for unified nutrition and workout recognition, refreshes recovery and Health Connect context, then automatically generates and saves a coach card with the saved Qwen key. |
+| New sleep transfer with Bluetooth collection enabled | Saves direct Ring measurements and queues one morning coach update using bounded per-session statistics. Requires the normal Ring companion/sync; raw windowed HRV remains separate from Samsung's daily sleeping-HRV summary. |
 | Settings → **刷新恢复数据** | Requests a health-data refresh without generating a coach card. The same HRV cache policy applies. |
 
 HRV capture needs the phone unlocked. Samsung Health briefly appears while RingCoach checks the date and reads each day's summary, then RingCoach returns to the foreground. A capture has an approximately 25-second timeout. Leave the screen unlocked and allow this navigation to finish. A successful capture containing today's HRV is reused for up to one hour, including when the refresh button is pressed. If today's HRV was missing, the reader can try again on the next refresh.
