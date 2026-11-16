@@ -39,6 +39,7 @@ class BackgroundProgressTest {
             "daily_nutrition" -> NutritionExtraction(NUTRITION_FIELDS.associateWith { NutritionValue(null, "missing", "") },
                 "unknown", "", emptyList()).toJson()
             "workout_actuals" -> JSONObject().put("records", JSONArray()).put("unresolved", JSONArray())
+            "workout_delta" -> JSONObject().put("changes", JSONArray()).put("unresolved", JSONArray())
             else -> CoachAdvice(listOf("按计划休息"), listOf("按原摄入计划"), listOf("测试数据" )).toJson()
         }
         return envelope(content)
@@ -137,7 +138,7 @@ class BackgroundProgressTest {
             store.writableDatabase.version = 12
         }
         JournalStore(context, name).use { store ->
-            assertEquals(13, store.readableDatabase.version)
+            assertEquals(14, store.readableDatabase.version)
             assertEquals("one", store.nextPendingCoaching()!!.id)
             assertNull(store.nextPendingNutrition()); assertNull(store.nextPendingWorkout())
             ProgressWorkStore(store.writableDatabase).putHealth(date, telemetry())
@@ -191,9 +192,9 @@ class BackgroundProgressTest {
         assertFalse(processor(name) { request, _ ->
             when (request.getJSONObject("response_format").getJSONObject("json_schema").getString("name")) {
                 "daily_nutrition" -> { nutritionCalls++; reply(request) }
-                "workout_actuals" -> {
+                "workout_delta" -> {
                     workoutCalls++
-                    if (workoutCalls == 1) envelope(JSONObject().put("records", JSONArray()).put("unresolved", JSONArray(listOf("paraphrased question"))))
+                    if (workoutCalls == 1) envelope(JSONObject().put("changes", JSONArray()).put("unresolved", JSONArray(listOf("paraphrased question"))))
                     else reply(request)
                 }
                 else -> { coachCalls++; reply(request) }
@@ -211,15 +212,15 @@ class BackgroundProgressTest {
         seed(name)
         var workouts = 0
         assertFalse(processor(name) { request, _ ->
-            if (request.getJSONObject("response_format").getJSONObject("json_schema").getString("name") == "workout_actuals") {
+            if (request.getJSONObject("response_format").getJSONObject("json_schema").getString("name") == "workout_delta") {
                 workouts++
-                envelope(JSONObject().put("records", JSONArray()).put("unresolved", JSONArray(listOf("unsupported paraphrase"))))
+                envelope(JSONObject().put("changes", JSONArray()).put("unresolved", JSONArray(listOf("unsupported paraphrase"))))
             } else reply(request)
         }.run())
         assertEquals(2, workouts)
         assertFalse(processor(name) { _, _ -> error("Blocked validation retried without authorization") }.run())
         JournalStore(context, name).use { store ->
-            assertEquals("workout_clarification_not_in_source", ProgressWorkStore(store.readableDatabase).state().getString("error_code"))
+            assertEquals("workout_clarification_not_in_new_input", ProgressWorkStore(store.readableDatabase).state().getString("error_code"))
             assertNotNull(store.nextPendingCoaching()); assertNull(store.latestCoachCard())
         }
     } }

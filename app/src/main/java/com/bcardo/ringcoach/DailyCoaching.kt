@@ -39,14 +39,15 @@ internal fun JournalStore.retryDailyCoaching(date: LocalDate) {
     val db = writableDatabase
     db.beginTransaction()
     try {
-        for (table in listOf("nutrition_turns", "nutrition_extractions", "workout_extractions"))
+        for (table in listOf("nutrition_turns", "nutrition_extractions", "workout_extractions", "workout_turns"))
             db.execSQL("UPDATE $table SET status='pending' WHERE status='failed' AND date=?", arrayOf(date.toString()))
         db.execSQL("""DELETE FROM progress_work_retries WHERE task_key IN (
             SELECT 'nutrition:' || submission_id FROM nutrition_turns WHERE date=?
             UNION SELECT 'nutrition:' || source_revision FROM nutrition_extractions WHERE date=?
             UNION SELECT 'workout:' || source_revision FROM workout_extractions WHERE date=?
-            UNION SELECT 'coach:' || id FROM progress_submissions WHERE date=?)""",
-            Array(4) { date.toString() })
+            UNION SELECT 'coach:' || id FROM progress_submissions WHERE date=?
+            UNION SELECT 'workout:' || submission_id FROM workout_turns WHERE date=?)""",
+            Array(5) { date.toString() })
         ProgressWorkStore(db).stage("pending", date)
         db.setTransactionSuccessful()
     } finally { db.endTransaction() }

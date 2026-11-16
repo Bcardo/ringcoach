@@ -26,9 +26,10 @@ class WorkoutProgressRecoveryTest {
     @Test fun appendedQuestionAndFailedRecognitionKeepLastConfirmedPerformance() = isolated { store ->
         seed(store)
         store.appendProgress("question", date, "Should I rest tomorrow?", emptyList(), true)
-        val pending = requireNotNull(store.nextPendingWorkout())
+        val turns = IncrementalWorkoutStore(store.writableDatabase)
+        val pending = requireNotNull(turns.next())
         assertEquals(record, store.latestWorkoutRecords(date).single().observation)
-        store.failWorkoutExtraction(pending)
+        turns.fail(pending)
         assertEquals(record, store.latestWorkoutRecords(date).single().observation)
         assertNotNull(store.progressSubmission("question"))
     }
@@ -45,7 +46,13 @@ class WorkoutProgressRecoveryTest {
         store.appendProgress("correction", date, correction, emptyList(), true)
         val updated = WorkoutObservation("Bench", "15 lb x 8", correction, "completed")
         assertEquals(record, store.latestWorkoutRecords(date).single().observation)
-        assertTrue(store.applyWorkoutExtraction(store.nextPendingWorkout()!!, WorkoutExtraction(listOf(updated), emptyList())))
+        val turns = IncrementalWorkoutStore(store.writableDatabase)
+        val pending = turns.next()!!
+        val delta = WorkoutDelta(listOf(WorkoutChange("replace", listOf(pending.previous.records.single().id), "Bench", "15 lb x 8", correction, "completed")), emptyList())
+        assertTrue(turns.apply(pending, WorkoutDeltaExtractor.apply(pending, delta, setOf("Bench"))))
         assertEquals(listOf(updated), store.latestWorkoutRecords(date).map { it.observation })
+        val context = store.latestWorkoutRecords(date).single().toJson()
+        assertTrue(context.getJSONArray("source_submission_ids").toString().contains("correction"))
+        assertEquals(correction, context.getString("update_evidence"))
     }
 }
