@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <application android:label="Ring Bluetooth Research" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false">
+        <activity android:name=".ProbeActivity" android:exported="true" />
+        <service android:name=".RingCaptureService" android:exported="false" android:process=":capture" android:foregroundServiceType="connectedDevice" />
+    </application>
+    <instrumentation android:name="androidx.test.runner.AndroidJUnitRunner" android:targetPackage="com.bcardo.ringcoach.bleresearch" android:functionalTest="true" />
+</manifest>

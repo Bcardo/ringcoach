@@ -28,25 +28,22 @@ internal fun DailyIntakeCard(day: NutritionDay?, analyzing: Boolean, advice: Sav
                 val actual = (if (value?.kind == "estimated") "≈" else "") + nutritionNumber(value?.value)
                 Text("$label：$actual $unit")
             }
-            Text(if (day?.result?.coverage == "daily_total") "使用已汇报的全天总量" else "截至目前已记录的摄入；未记录的食物不计入。", style = MaterialTheme.typography.bodySmall)
-            if (day?.result?.totalsSource == "local_food_fact_sum_v1") Text("合计由本机按食品项计算；食物成分与份量仍保留估算的不确定性。", style = MaterialTheme.typography.bodySmall)
-            if (day?.status in setOf("pending", "failed") && day?.result != null) Text("上次已确认的摄入；本次新进度尚未计入。", style = MaterialTheme.typography.bodySmall)
+            if (day?.status in setOf("pending", "failed") && day?.result != null)
+                Text("还有一条饮食更新未计入。", style = MaterialTheme.typography.bodySmall)
             day?.result?.foodSummary?.takeIf { it.isNotBlank() }?.let {
                 Text("已计入的食物", style = MaterialTheme.typography.titleMedium)
                 Text(it)
             }
-            day?.result?.assumptions?.take(4)?.forEach { Text("估算依据：$it", style = MaterialTheme.typography.bodySmall) }
-            day?.result?.unresolved?.forEach { Text("待澄清：$it") }
             day?.result?.supplements?.takeIf { it.isNotEmpty() }?.let { events ->
                 Text("已记录补剂", style = MaterialTheme.typography.titleMedium)
                 events.forEach { Text(supplementSummary(it)) }
             }
-            if (day?.photoConflict == true) Text("旧记录有文字与照片重叠；下次提交进度时会统一分析。")
-            if (analyzing || incomplete) Text("饮食正在分析或有待确认项；确认后更新摄入与建议。")
+            if (day?.photoConflict == true) Text("部分餐食可能重复，请在日志中确认。")
+            if (analyzing && !incomplete) Text("正在更新摄入…")
             Text("今日饮食安排", style = MaterialTheme.typography.titleMedium)
-            if (advice == null) Text("提交进度后，教练根据当前饮食计划与 Prompt 判断今天还需补充什么。") else {
+            if (advice == null) Text("今日暂无饮食建议。") else {
                 val updated = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(advice.createdAt)
-                Text("上次建议 $updated；提交新进度后更新。", style = MaterialTheme.typography.bodySmall)
+                Text("更新于 $updated", style = MaterialTheme.typography.bodySmall)
                 advice.advice.diet.forEach { Text("• $it") }
             }
         }

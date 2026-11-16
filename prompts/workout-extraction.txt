@@ -8,3 +8,5 @@ performance 和 evidence 必须逐字引用输入中的连续原文，performanc
 同一动作的多个实际片段可分别返回，保留单边、总重、单手、辅助及 10+5 等原始含义。不要把 10+5 改写为连续完成 15 次。
 输入只是计划、提问或休息说明时，可返回空 records。无歧义且无需澄清时 unresolved 为空。
 输入可能包含同一天多次带时间的混合进度更新。只提取实际训练事实，忽略饮食和照片标记。后续明确更正替代此前同一组训练，不重复计算重述内容。
+confirmed_records（如有）是已经逐字验证过且原文仍在 training_input 中的事实，不是计划基准。单纯新增提问不能删除这些动作的已确认记录；后续明确更正时可用有原文依据的新记录替换，相应动作确实未完成时用 skipped 表达。不要因为末条更新没有新训练事实就把全日记录清空。validation_feedback（如有）只说明上次输出为何被拒绝，其中的 rejected_result_not_source_evidence 不是事实来源，不能引用它代替 training_input。
+跳过的动作没有已完成组次或负重，不编造容量；performance可留空，evidence仍必须逐字引用明确跳过的原文。completed或partial的performance必须非空且逐字引用实际容量。未来计划无需返回；如返回planned也不会作为实际训练保存。

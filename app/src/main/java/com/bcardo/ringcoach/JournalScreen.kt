@@ -26,16 +26,14 @@ internal fun JournalApp(
     var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
     val enabled = !journal.loading && !journal.saving && !journal.loadFailed && !photos.working
     val workRevision by ProgressRuntime.revision.collectAsState()
-    val backgroundRunning by ProgressRuntime.running.collectAsState()
     val readerRevision by RecoveryReliability.revision.collectAsState()
     val appContext = LocalContext.current.applicationContext
     LaunchedEffect(readerRevision, coach.foreground, coach.nightlySyncing) {
         if (coach.foreground && !coach.nightlySyncing && SamsungHealthScreenReader.enabled && SamsungHealthScreenReader.needsCapture(appContext))
             coach.refreshNightly(readScreen = true)
     }
-    val processing = photos.working || workouts.syncing || nutrition.syncing || coach.busy || backgroundRunning
     LaunchedEffect(workRevision, today) {
-        coach.reload(); workouts.sync(today); nutrition.sync(today)
+        coach.reload(today); workouts.sync(today); nutrition.sync(today)
         if (tab == "history") coachHistory.reload()
     }
     LaunchedEffect(coach.progressStage, coach.pendingProgressDate, coach.foreground) {
@@ -86,35 +84,29 @@ internal fun JournalApp(
                 } else when (tab) {
                     "home" -> {
                         Text(today.toString())
-                        NightlyRecoveryPanel(coach, today)
-                        DailyIntakeCard(nutrition.days.firstOrNull { it.date == today }, nutrition.syncing,
-                            coach.card?.takeIf { it.date == today })
-                        if (processing) Text("正在更新摄入、训练计划与教练建议…")
-                        ProgressStatus(coach)
-                        if (coach.waitingForHealthRead) Text("进度已保存，返回 RingCoach 后继续读取健康数据并更新建议。")
-                        if (coach.pendingProgressId != null && !processing) Text("有进度等待更新，可在日志中查看处理状态。")
-                        coach.card?.let {
-                            Text(if (coach.pendingProgressId != null) "上次教练建议 · 新进度尚未完成反馈" else "最新教练建议", style = MaterialTheme.typography.titleLarge)
-                            Text("更新于 ${coachCardTimestamp(it.createdAt)}", style = MaterialTheme.typography.bodySmall)
-                            if (it.date != today) Text("这是 ${it.date} 的建议，今日尚未更新。")
-                            it.advice.notes.forEach { note -> Text("• $note") }
-                            CoachingManifestPanel(runCatching { org.json.JSONObject(it.contextJson).optJSONObject("request_manifest") }.getOrNull())
+                        val feedback = coach.dailyCoaching?.takeIf { it.date == today }
+                        val card = feedback?.card
+                        Text("教练建议", style = MaterialTheme.typography.titleLarge)
+                        if (card == null) Text("今日暂无建议。可在日志中告诉教练你的近况或问题。") else {
+                            Text("更新于 ${coachCardTimestamp(card.createdAt)}", style = MaterialTheme.typography.bodySmall)
+                            card.advice.notes.forEach { Text("• $it") }
                         }
+                        ProgressStatus(coach, today) { coach.retryProgress(probe) }
+                        DailyIntakeCard(nutrition.days.firstOrNull { it.date == today }, nutrition.syncing,
+                            card)
                     }
                     "training" -> {
-                        val card = coach.card
-                        Text("当前训练计划", style = MaterialTheme.typography.titleLarge)
-                        Text("完整动作计划与最新表现", style = MaterialTheme.typography.titleMedium)
+                        val card = coach.dailyCoaching?.takeIf { it.date == today }?.card
+                        Text(today.toString())
+                        Text("训练计划与最新进度", style = MaterialTheme.typography.titleLarge)
                         WorkoutScreen(workouts, today, readOnly = true)
+                        HorizontalDivider()
+                        Text("今日训练建议", style = MaterialTheme.typography.titleLarge)
                         if (card != null) {
-                            Text(if (coach.pendingProgressId != null) "上次教练调整 · 新进度尚未完成反馈" else "最新教练调整", style = MaterialTheme.typography.titleMedium)
-                            Text("计划日期 ${card.date} · 更新于 ${coachCardTimestamp(card.createdAt)}", style = MaterialTheme.typography.bodySmall)
+                            Text("更新于 ${coachCardTimestamp(card.createdAt)}", style = MaterialTheme.typography.bodySmall)
                             card.advice.training.forEach { Text("• $it") }
-                        } else Text("提交进度后，教练会结合恢复状态更新训练安排。")
-                        settings.draft?.routine?.takeIf { it.isNotBlank() }?.let {
-                            Text("训练约束与说明", style = MaterialTheme.typography.titleMedium)
-                            Text(it.replace("**", "").replace(Regex("(?m)^#+\\s*"), ""))
-                        }
+                        } else Text("今日暂无训练建议。可在日志中向教练提问。")
+                        ProgressStatus(coach, today) { coach.retryProgress(probe) }
                     }
                     "journal" -> {
                         JournalLoadState(journal)
@@ -125,27 +117,7 @@ internal fun JournalApp(
                                 workouts.sync(today); nutrition.sync(today)
                             }
                         }
-                        if (processing) Text("正在结合当天记录与恢复数据更新…")
-                        ProgressStatus(coach)
-                        if (coach.waitingForHealthRead) Text("进度已保存，返回 RingCoach 后继续读取健康数据并更新建议。")
-                        val failed = nutrition.notice != null || workouts.notice != null ||
-                            nutrition.days.any { it.status == "failed" } || workouts.statuses.any { it.optString("status") == "failed" }
-                        if (!processing && (failed || coach.pendingProgressId != null)) {
-                            Text(when {
-                                nutrition.notice != null || nutrition.days.any { it.status == "failed" } -> "饮食分析未完成，因此摄入和教练建议尚未更新。已提交内容保留，无需再次输入。"
-                                workouts.notice != null || workouts.statuses.any { it.optString("status") == "failed" } -> "训练识别未完成。已提交内容保留，无需再次输入。"
-                                else -> "后台更新尚未完成，已提交内容保留，无需再次输入。"
-                            })
-                            nutrition.notice?.let { Text(stringResource(it)) }
-                            workouts.notice?.let { Text(stringResource(it)) }
-                            if (!coach.hasKey) Text("请在设置中配置千问密钥。")
-                            coach.notice?.let { Text(stringResource(it)) }
-                            CoachingManifestPanel(coach.requestManifest)
-                            OutlinedButton(enabled = coach.hasKey, onClick = {
-                                workouts.sync(today); nutrition.sync(today)
-                                coach.allowProgressRetry(); coach.captureProgressHealth(probe)
-                            }) { Text("重试更新") }
-                        }
+                        ProgressStatus(coach, today) { coach.retryProgress(probe) }
                     }
                     "history" -> {
                         RecoveryHistoryPanel(coachHistory, today)
@@ -251,21 +223,14 @@ private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewM
 }
 
 @Composable
-private fun ProgressStatus(coach: CoachViewModel) {
-    if (coach.pendingProgressId == null) return
-    Text(when (coach.progressStage) {
-        "recognizing_intake" -> "正在后台识别摄入，可切换应用，稍后返回查看。"
-        "recognizing_workout" -> "正在后台识别训练，可稍后返回查看。"
-        "coaching" -> "正在后台生成教练建议，可稍后返回查看。"
-        "waiting_health" -> "进度已保存，返回应用后补充健康数据并继续处理。"
-        "retry_scheduled" -> "连接暂时失败，已安排自动重试。"
-        "blocked" -> when (coach.progressError) {
-            "credential_missing", "provider_access" -> "更新暂停，请在设置中检查千问密钥后重试。"
-            "provider_quota" -> "请求额度或频率受限，请稍后重试。"
-            "network", "provider_temporary" -> "连接多次失败，请检查网络后重试更新。"
-            "context_too_large" -> "本次必要证据超过请求大小限制，尚未发送。"
-            else -> "分析未能完成，内容已保存，可重试更新。"
-        }
-        else -> "进度已保存，等待后台处理；稍后重新打开查看最新结果。"
-    }, style = MaterialTheme.typography.bodySmall)
+private fun ProgressStatus(coach: CoachViewModel, date: LocalDate, onRetry: () -> Unit) {
+    val feedback = coach.dailyCoaching?.takeIf { it.date == date } ?: return
+    if (feedback.pending == null) return
+    if (feedback.needsRetry) {
+        Text(if (feedback.card == null) "这次更新未完成，还没有生成当天建议。"
+            else "这次更新未完成，上次建议尚未包含这条新记录。", style = MaterialTheme.typography.bodySmall)
+        if (!coach.hasKey || feedback.error in setOf("credential_missing", "provider_access"))
+            Text("请在设置中检查模型账号。", style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(enabled = coach.hasKey && !coach.busy, onClick = onRetry) { Text("重试本次更新") }
+    } else if (feedback.updating) Text("正在更新教练建议…", style = MaterialTheme.typography.bodySmall)
 }

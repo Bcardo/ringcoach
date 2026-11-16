@@ -13,6 +13,7 @@ import java.time.LocalDate
 internal fun NightlyRecoveryPanel(coach: CoachViewModel, date: LocalDate, setup: Boolean = false) {
     val activity = LocalActivity.current
     Column {
+        RingBluetoothPanel(date, setup)
         Text("昨夜恢复数据", style = MaterialTheme.typography.titleMedium)
         val records = coach.nightlySnapshot?.optJSONArray("records")
         val today = (0 until (records?.length() ?: 0)).map { records!!.getJSONObject(it) }

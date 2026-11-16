@@ -17,6 +17,7 @@ import java.time.LocalDate
 
 @Composable
 internal fun WorkoutScreen(workouts: WorkoutViewModel, today: LocalDate, readOnly: Boolean = false) {
+    if (!readOnly) {
     Text(stringResource(R.string.workout_help))
     if (workouts.syncing) Text(stringResource(R.string.workout_syncing))
     if (workouts.needsKey) Text(stringResource(R.string.workout_key_needed))
@@ -34,6 +35,7 @@ internal fun WorkoutScreen(workouts: WorkoutViewModel, today: LocalDate, readOnl
             for (index in 0 until unresolved.length()) Text(unresolved.getString(index))
         }
     }
+    } else if (workouts.notice != null) Text("暂时无法读取训练记录，请稍后重试。")
     val actuals = workouts.records.groupBy { it.observation.exercise }
     val baselineByExercise = workouts.baselines.associateBy { it.exercise }
     val names = (workouts.baselines.map { it.exercise } + actuals.keys).distinct()

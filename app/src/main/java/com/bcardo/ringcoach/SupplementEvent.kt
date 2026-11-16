@@ -73,7 +73,9 @@ internal object SupplementState {
                 require(event.evidence.isNotBlank() && turn.input.contains(event.evidence)) { "Supplement evidence must quote this submission" }
                 require(event.evidence.contains(event.name))
                 event.amount?.takeIf { it != old?.amount }?.let { amount ->
-                    require(Regex("[0-9]+(?:\\.[0-9]+)?").findAll(event.evidence).any { it.value.toDouble() == amount })
+                    require(quotedSupplementAmount(event.evidence, amount, event.unit)) {
+                        "Supplement amount must match a quoted numeral and unit (Arabic or Chinese)"
+                    }
                 }
                 event.unit?.takeIf { it != old?.unit }?.let { require(event.evidence.contains(it)) }
                 event.intakeTime?.takeIf { it != old?.intakeTime }?.let {
@@ -94,6 +96,46 @@ internal object SupplementState {
             }
         }
     }
+}
+
+/** Chinese quantities must adjoin their stated unit so vague words such as 一些 are not doses. */
+internal fun quotedSupplementAmount(evidence: String, amount: Double, unit: String?): Boolean {
+    if (Regex("[0-9]+(?:\\.[0-9]+)?").findAll(evidence).any { it.value.toDouble() == amount }) return true
+    if (unit.isNullOrBlank()) return false
+    val digits = "零一二三四五六七八九"
+    fun chineseNumber(raw: String): Double? {
+        if (raw == "半") return 0.5
+        val text = raw.replace('两', '二').replace('〇', '零')
+        val parts = text.split('点')
+        if (parts.size > 2 || parts[0].isEmpty()) return null
+        var total = 0
+        var digit = 0
+        var lastScale = 10000
+        val integer = parts[0]
+        if (integer.none { it in "十百千" }) {
+            if (integer.length != 1) return null
+            total = digits.indexOf(integer.single())
+            if (total < 0) return null
+        } else {
+            for (char in integer) {
+                val value = digits.indexOf(char)
+                if (value >= 0) { if (digit != 0) return null; digit = value }
+                else {
+                    val scale = when (char) { '十' -> 10; '百' -> 100; '千' -> 1000; else -> return null }
+                    if (scale >= lastScale || (digit == 0 && !(char == '十' && total == 0))) return null
+                    total += (if (digit == 0) 1 else digit) * scale
+                    digit = 0; lastScale = scale
+                }
+            }
+            total += digit
+        }
+        if (parts.size == 1) return total.toDouble()
+        val fraction = parts[1]
+        if (fraction.isEmpty() || fraction.any { it !in digits }) return null
+        return (total.toString() + "." + fraction.map { digits.indexOf(it) }.joinToString("")).toDoubleOrNull()
+    }
+    return Regex("([零〇一二两三四五六七八九十百千点半]+)\\s*" + Regex.escape(unit))
+        .findAll(evidence).any { chineseNumber(it.groupValues[1]) == amount }
 }
 
 internal fun supplementSummary(event: SupplementEvent): String {

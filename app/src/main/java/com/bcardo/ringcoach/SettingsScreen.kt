@@ -51,6 +51,10 @@ internal fun SettingsEditor(settings: SettingsViewModel, coach: CoachViewModel, 
         NightlyRecoveryPanel(coach, today, setup = true)
     }
     Text(stringResource(R.string.settings_context_help))
+    runCatching { StandingBreakfast.parse(draft.instructions) }.getOrNull()?.let { breakfast ->
+        Text("每日默认早餐（自 ${breakfast.effectiveDate}）：${breakfast.description}")
+        Text("无需每天汇报；按固定规则默认计入。当天说跳过、换餐或改份量会覆盖，确认固定早餐不会重复计入。可在下方已保存指令中修改或删除该规则。", style = MaterialTheme.typography.bodySmall)
+    }
     TextButton(onClick = { advancedOpen = !advancedOpen }) { Text("高级 · 导入与上下文检查") }
     if (advancedOpen) {
     OutlinedButton(enabled = enabled, onClick = {

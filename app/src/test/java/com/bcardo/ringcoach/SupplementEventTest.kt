@@ -6,6 +6,22 @@ import org.junit.Test
 import java.time.LocalDate
 
 class SupplementEventTest {
+    @Test fun chineseQuantitiesValidateWithoutAcceptingVagueOrUnsupportedAmounts() {
+        for ((quote, amount, unit) in listOf(Triple("一根蛋白棒", 1.0, "根"),
+            Triple("两粒维生素", 2.0, "粒"), Triple("肌酸三点五克", 3.5, "克"),
+            Triple("半勺蛋白粉", 0.5, "勺"), Triple("维生素二十五毫克", 25.0, "毫克"),
+            Triple("肌酸三百零五毫克", 305.0, "毫克"))) {
+            assertTrue(quote, quotedSupplementAmount(quote, amount, unit))
+        }
+        assertFalse(quotedSupplementAmount("一些蛋白粉", 1.0, "勺"))
+        assertFalse(quotedSupplementAmount("一根蛋白棒", 2.0, "根"))
+        assertFalse(quotedSupplementAmount("一根蛋白棒", 1.0, "克"))
+        assertFalse(quotedSupplementAmount("一根蛋白棒", 1.0, null))
+        assertFalse(quotedSupplementAmount("十二粒维生素", 2.0, "粒"))
+        val input = "服用一粒维生素"
+        DailyFoodState.validate(job(input = input), state(listOf(event().copy(name = "维生素",
+            amount = 1.0, unit = "粒", intakeTime = null, evidence = input))))
+    }
     private val date = LocalDate.of(2026, 11, 10)
     private fun event(id: String = "one:supplement:1", status: String = "taken") = SupplementEvent(
         id, date, "肌酸", 3.0, "g", "早餐后", status, "早餐后服用肌酸3g", listOf("one"))

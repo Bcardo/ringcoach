@@ -75,6 +75,7 @@ internal fun NutritionScreen(nutrition: NutritionViewModel, today: LocalDate, on
     for (day in nutrition.days) {
         HorizontalDivider()
         Text(day.date.toString(), style = MaterialTheme.typography.titleMedium)
+        day.breakfast?.let { Text(it.getString("label"), style = MaterialTheme.typography.bodyMedium) }
         if (day.photoMeals.isNotEmpty()) {
             Text(stringResource(R.string.photo_day_count, day.photoMeals.size))
             if (day.result?.coverage == "daily_total") Text(stringResource(R.string.photo_daily_total_priority))

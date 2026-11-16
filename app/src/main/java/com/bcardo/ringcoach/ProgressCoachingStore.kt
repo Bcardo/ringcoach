@@ -32,9 +32,11 @@ internal class ProgressCoachingStore(private val db: SQLiteDatabase) {
 
     fun enqueue(id: String) = db.execSQL("INSERT INTO progress_coaching VALUES (?)", arrayOf(id))
 
-    fun next(): PendingCoaching? = db.rawQuery("""SELECT p.id,p.date FROM progress_coaching q
+    fun next(date: LocalDate? = null): PendingCoaching? = db.rawQuery("""SELECT p.id,p.date FROM progress_coaching q
         JOIN progress_submissions p ON p.id=q.submission_id
-        LEFT JOIN coach_cards c ON c.id=p.id WHERE c.id IS NULL ORDER BY p.rowid LIMIT 1""", null).use {
+        LEFT JOIN coach_cards c ON c.id=p.id WHERE c.id IS NULL
+        ${if (date != null) "AND p.date=?" else ""} ORDER BY p.rowid LIMIT 1""",
+        date?.let { arrayOf(it.toString()) }).use {
         if (it.moveToFirst()) PendingCoaching(it.getString(0), LocalDate.parse(it.getString(1))) else null
     }
 }

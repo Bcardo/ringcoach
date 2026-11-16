@@ -14,6 +14,9 @@ internal fun CoachingManifestPanel(manifest: JSONObject?) {
     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起本次依据与覆盖" else "查看本次依据与覆盖") }
     if (!expanded) return
     Text("分析日期：${manifest.optString("request_date")}", style = MaterialTheme.typography.bodySmall)
+    manifest.optJSONObject("ring_bluetooth")?.let {
+        Text("戒指蓝牙：${it.optInt("target_date_session_count")} 段当日睡眠，${it.optInt("target_date_hrv_window_count")} 个窗口；实验解码，仅发送统计汇总。", style = MaterialTheme.typography.bodySmall)
+    }
     Text("进度历史：${manifest.optString("progress_history_start")} 至 ${manifest.optString("request_date")}")
     if (!manifest.isNull("recovery_history_start")) Text("恢复比较：${manifest.optString("recovery_history_start")} 至 ${manifest.optString("recovery_history_end")}；缺失日期不补零。")
     manifest.optJSONArray("recovery_series_coverage")?.let { series ->
