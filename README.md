@@ -1,5 +1,7 @@
 # RingCoach
 
+[Lossless coaching context packing](docs/coaching-request-context.md) removes identical plan copies and repeated history/sensor fields from outgoing requests while preserving confirmed facts, dates, source distinctions and every transient sample. The 128 KiB limit stays unchanged; bounded privacy-safe byte diagnostics explain future failures. Existing intake/training recognition survives feedback retry. Wider context selection and ordinary-use acceptance remain under #65/#56/#52.
+
 [Incremental workout follow-ups](docs/incremental-workout-followups.md) recognize new Journal input against confirmed workout facts. Questions and future plans leave progress intact; corrections and retractions are source-backed changes. Processing reliability remains tracked under #52/#57 across ordinary use.
 
 An explicitly saved [daily default breakfast](docs/standing-breakfast.md) can now be counted once per date without a daily report, labeled as assumed. Confirmations do not duplicate it; dated skipped/replacement/portion-change reports override it. The recognizer receives saved recipe references, and the nutrition table and coach share the same adjusted totals.

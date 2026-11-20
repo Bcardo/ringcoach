@@ -220,6 +220,8 @@ private fun ProgressStatus(coach: CoachViewModel, date: LocalDate, onRetry: () -
     val feedback = coach.dailyCoaching?.takeIf { it.date == date } ?: return
     if (feedback.pending == null) return
     if (feedback.needsRetry) {
+        if (feedback.error == "context_too_large")
+            Text("本次进度已保存；教练所需信息过多，建议尚未生成。重试不会重复记录已完成的摄入或训练。", style = MaterialTheme.typography.bodySmall)
         Text(if (feedback.card == null) "这次更新未完成，还没有生成当天建议。"
             else "这次更新未完成，上次建议尚未包含这条新记录。", style = MaterialTheme.typography.bodySmall)
         if (!coach.hasKey || feedback.error in setOf("credential_missing", "provider_access"))

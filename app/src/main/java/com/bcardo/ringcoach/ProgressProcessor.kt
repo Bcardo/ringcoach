@@ -114,7 +114,7 @@ internal class ProgressProcessor(
                     NightlyRecoveryStore(context).use { history -> data.put("recovery_history",
                         CoachingRecoveryHistory.compact(history.history(pending.date.minusDays(30), pending.date.minusDays(1)), pending.date)) }
                 }
-                val packaged = CoachingRequestPackager.prepare(data, asset("coach-system.txt"))
+                val packaged = CoachingRequestPackager.prepare(data, asset("coach-system.txt"), onSize = { size -> if (database == "ringcoach.db") CoachingRequestSizeStore.record(context, size) })
                 currentCoroutineContext().ensureActive()
                 val advice = QwenClient.response(post(packaged.request, key))
                 currentCoroutineContext().ensureActive()
