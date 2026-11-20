@@ -5,13 +5,14 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 internal const val COACH_REQUEST_BUDGET = 128 * 1024
-internal class CoachingPayloadTooLarge(val manifest: JSONObject) : IllegalArgumentException("Required coaching evidence exceeds request budget")
-internal data class CoachingRequestPackage(val request: JSONObject, val retainedContext: JSONObject)
+internal class CoachingPayloadTooLarge(val manifest: JSONObject, val size: CoachingRequestSize) : IllegalArgumentException("Required coaching evidence exceeds request budget")
+internal data class CoachingRequestPackage(val request: JSONObject, val retainedContext: JSONObject, val size: CoachingRequestSize)
 
 /** Budget the actual model request; preserve target-night samples and current converted facts intact. */
 internal object CoachingRequestPackager {
-    fun prepare(original: JSONObject, systemPrompt: String, budget: Int = COACH_REQUEST_BUDGET): CoachingRequestPackage {
+    fun prepare(original: JSONObject, systemPrompt: String, budget: Int = COACH_REQUEST_BUDGET, onSize: (CoachingRequestSize) -> Unit = {}): CoachingRequestPackage {
         require(budget > 0)
+        val target = minOf(budget, 112 * 1024)
         val context = JSONObject(original.toString())
         val date = context.getString("request_date")
         val omissions = JSONArray()
@@ -60,6 +61,7 @@ internal object CoachingRequestPackager {
         val plan = JSONObject().put("routine", context.optString("routine")).put("diet_plan", context.optString("diet_plan"))
             .put("instructions", context.optString("instructions"))
         val manifest = manifest(context).put("omissions", omissions).put("budget_bytes", budget)
+            .put("target_bytes", target).put("wire_policy", CoachingWireContext.VERSION)
             .put("budget_status", "fits")
             .put("saved_plan_snapshot_id", sha256(plan.toString().toByteArray(Charsets.UTF_8)))
             .put("plan_scope", "current_user_saved_settings_snapshot_not_effective_date_plan_memory")
@@ -75,49 +77,30 @@ internal object CoachingRequestPackager {
             error("Request byte count did not stabilize")
         }
         var request = serialize()
-        if (manifest.getInt("serialized_request_bytes") > budget && context.has("previous_advice")) {
+        if (manifest.getInt("serialized_request_bytes") > target && context.has("previous_advice")) {
             context.remove("previous_advice")
             omission("previous_advice", 1, "request_budget_saved_plans_and_current_facts_preserved")
             request = serialize()
         }
-        if (manifest.getInt("serialized_request_bytes") > budget && current.isNotEmpty()) {
+        if (manifest.getInt("serialized_request_bytes") > target && current.isNotEmpty()) {
             context.put("journal_history", JSONArray())
             omission("current_day_raw_journal_copy", current.size, "request_budget_trigger_and_complete_converted_food_workout_supplement_facts_preserved")
             request = serialize()
         }
         if (manifest.getInt("serialized_request_bytes") > budget) {
-            // Retain every sample and exact timestamp/value, but write repeated field names once.
-            val series = telemetry?.optJSONObject("current_night")?.optJSONArray("heart_rate_series")
-            var encoded = 0
-            for (i in 0 until (series?.length() ?: 0)) {
-                val record = series!!.getJSONObject(i)
-                val samples = record.optJSONArray("samples") ?: continue
-                if (samples.length() == 0 || samples.optJSONObject(0) == null) continue
-                val keys = samples.getJSONObject(0).keys().asSequence().toSet()
-                if (keys !in listOf(setOf("time", "beats_per_minute"), setOf("time", "beats_per_minute", "session_refs"))) continue
-                if ((0 until samples.length()).any { samples.optJSONObject(it)?.keys()?.asSequence()?.toSet() != keys }) continue
-                val columns = listOf("time", "beats_per_minute", "session_refs").filter { it in keys }
-                record.put("samples", JSONArray((0 until samples.length()).map { index ->
-                    JSONArray(columns.map { field -> samples.getJSONObject(index).get(field) })
-                })).put("sample_columns", JSONArray(columns)).put("sample_encoding", "rows_in_sample_columns_order_lossless")
-                encoded += samples.length()
-            }
-            if (encoded > 0) {
-                manifest.put("lossless_hr_sample_encoding", JSONObject().put("sample_count", encoded)
-                    .put("encoding", "rows_in_sample_columns_order_lossless").put("samples_removed", 0))
-                request = serialize()
-            }
-        }
-        manifest.put("budget_status", "fits")
-        request = serialize()
-        if (manifest.getInt("serialized_request_bytes") > budget) {
             manifest.put("budget_status", "required_evidence_too_large_not_sent")
-            throw CoachingPayloadTooLarge(JSONObject(manifest.toString()))
+            request = serialize()
         }
+        val unpacked = QwenClient.request(context, systemPrompt, false).toString().toByteArray(Charsets.UTF_8).size
+        val size = CoachingRequestSize.measure(request, unpacked, budget, target,
+            manifest.optString("budget_status") == "required_evidence_too_large_not_sent")
+        // Reporting failure must never replace the real preparation outcome.
+        runCatching { onSize(size) }
+        if (size.blocked) throw CoachingPayloadTooLarge(JSONObject(manifest.toString()), size)
         val retained = CoachingSnapshot.retained(context)
         retained.getJSONObject("request_manifest").put("model_request_sha256", sha256(request.toString().toByteArray(Charsets.UTF_8)))
             .put("snapshot_kind", "retained_facts_and_manifest_hr_samples_not_archived")
-        return CoachingRequestPackage(request, retained)
+        return CoachingRequestPackage(request, retained, size)
     }
 
     private fun manifest(context: JSONObject): JSONObject {
@@ -136,7 +119,7 @@ internal object CoachingRequestPackager {
         val ringSessions = ring?.optJSONArray("sessions") ?: JSONArray()
         val ringToday = (0 until ringSessions.length()).map { ringSessions.getJSONObject(it) }.filter { it.optString("wake_date") == date }
         val sources = telemetry?.optJSONObject("metrics") ?: JSONObject()
-        return JSONObject().put("version", "coaching-context-v1").put("request_date", date)
+        return JSONObject().put("version", "coaching-context-v2").put("request_date", date)
             .put("request_timezone", context.optString("request_timezone"))
             .put("progress_history_start", context.optString("history_start"))
             .put("health_read_start", telemetry?.opt("window_start") ?: JSONObject.NULL)

@@ -22,7 +22,27 @@ The saved routine/diet/instructions get a content-addressed snapshot ID. This ve
 
 ## Size and persistence boundary
 
-The budget is 128 KiB for the actual serialized Qwen request, including system text, user JSON, schema and manifest. The manifest's byte count is stabilized against that serialization. Optional prior advice and a duplicate current-day raw journal copy can be dropped, with explicit omission entries. Current converted facts, the triggering submission and current-night evidence are not silently truncated. If the required payload still exceeds the limit, no request is sent and the existing retry flow keeps the submission pending.
+The hard budget remains 128 KiB for the actual serialized Qwen request, including system text, escaped user JSON, schema and manifest. The manifest's byte count is stabilized against that serialization. A 112 KiB soft target provides room for growth: only the previously optional prior advice and duplicate current-day raw journal copy can be removed to approach it, with explicit omission entries. Mandatory evidence may exceed the soft target while remaining within the hard cap. Current converted facts, the triggering submission and current-night evidence are not silently truncated. If required evidence still exceeds the hard limit, no request is sent and the existing retry flow keeps the submission pending.
+
+### Lossless outgoing format
+
+`coaching-context-v2` selects the `coaching-wire-v1` policy. The serializer compares the complete ordinary and compact requests, including format instructions, and uses the smaller. Canonical context, History and saved advice keep their existing object/array shapes; only the outgoing representation changes.
+
+- An exactly identical supplement standing plan references the one saved routine/diet/instructions instead of duplicating them. Different plan values are never aliased. User instructions remain in the system message.
+- Homogeneous records can use `rows-v1`: common fields plus ordered columns and rows. Different field sets stay unchanged, preserving absent fields separately from explicit nulls.
+- `recovery-days-v1` retains every queried wake date and each metric's original value/null, status, unit, definition, source, verification time, revision and reference. Missing days remain missing; this is not a computed baseline or a reduced history window.
+- `ring-sessions-v1` retains separate session rows and per-metric session indices. All counts/statistics/definitions/validation labels remain present; overlapping sessions and sources are not combined.
+- Heart-rate rows retain every timestamp/value and session reference. No samples or stages are removed. Raw streams remain transient and are stripped from canonical saved snapshots as before.
+
+Fixed decoding instructions accompany the compact format. Exact reconstruction tests cover field presence, gaps/nulls, source/date boundaries, overlapping sessions, sample preservation and input immutability. Paired ordinary/compact synthetic checks cover confirmed intake/workout facts, corrections, unknown intake, estimated partial-day coverage, planned exercise and missing/conflicting recovery sources. The seven cases use fourteen provider calls with no owner facts or new advice cards. Byte savings and these finite checks do not establish universal answer quality or uninterrupted reliability. See the [ordinary-use trial and recurrence plan](context-budget-trial.md).
+
+This first #65 milestone does **not** introduce shorter history windows, target-date-only vendor projections, summary-only replacement of fresh traces, a relevance classifier, a higher cap or new physiological scores. Those policy choices remain separate work and require explicit coverage/omission and quality evaluation.
+
+### Privacy-safe size diagnostics
+
+Manual, progress and morning preparation record a best-effort size report on success and on oversized-evidence failure. App-private `coaching-request-sizes.db` keeps at most 100 reports with timestamps, fixed policy/category names, integer byte counts and encoded/blocked flags. Unknown field names aggregate into `other`. Reports exclude text, readings, raw arrays, photos, credentials, identifiers, hashes and model responses.
+
+Per-section counts include escaping inside the outer user-message JSON string. They plus user structure bytes equal quoted user-content bytes; system-content bytes and envelope bytes complete the actual serialized request total. The unpacked counterfactual measures the same selected evidence with ordinary serialization, not a replay of an unavailable earlier payload. Byte counts are not model tokens, latency or cost. Diagnostic failure cannot block or replace the real preparation result.
 
 `PreparedCoaching.request` holds the actual request only in memory. Successful cards save a separate retained context: sleep intervals, HR statistics/coverage and a manifest with the actual request byte count and SHA-256. HR `samples` arrays are removed. `JournalStore.saveCoachCard` applies the removal again at the SQLite boundary. The archived context is clearly labeled as retained facts/coverage rather than a replayable exact trace payload. API/model failures do not persist the request; retry rereads the source. Source history that is later unavailable cannot be reconstructed from a saved card. No raw trace logging or trace cache is added. Existing old cards had aggregate HR, not these transient sample arrays.
 

@@ -6,7 +6,7 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 internal const val QWEN_MODEL = "qwen3.8-flash"
-internal const val COACH_PROMPT_VERSION = "coach-v15-screen-free-recovery"
+internal const val COACH_PROMPT_VERSION = "coach-v16-lossless-context"
 
 internal data class CoachAdvice(val training: List<String>, val diet: List<String>, val notes: List<String>) {
     fun toJson(): JSONObject = JSONObject()
@@ -41,6 +41,20 @@ internal object QwenClient {
     }
 
     fun request(context: JSONObject, systemPrompt: String): JSONObject {
+        return request(context, systemPrompt, context.optJSONObject("request_manifest")?.optString("wire_policy") == CoachingWireContext.VERSION)
+    }
+
+    fun request(context: JSONObject, systemPrompt: String, compact: Boolean): JSONObject {
+        if (context.optString("context_encoding") == CoachingWireContext.VERSION)
+            return buildRequest(context, systemPrompt + "\n" + CoachingWireContext.INSTRUCTIONS)
+        val plain = buildRequest(context, systemPrompt)
+        if (!compact) return plain
+        val encoded = buildRequest(CoachingWireContext.encode(context), systemPrompt + "\n" + CoachingWireContext.INSTRUCTIONS)
+        // Tiny/unusual inputs keep the ordinary schema when encoding instructions would cost more.
+        return if (encoded.toString().toByteArray(Charsets.UTF_8).size < plain.toString().toByteArray(Charsets.UTF_8).size) encoded else plain
+    }
+
+    private fun buildRequest(context: JSONObject, systemPrompt: String): JSONObject {
         val fields = JSONObject()
         for (name in listOf("training", "diet", "notes")) {
             fields.put(name, JSONObject()

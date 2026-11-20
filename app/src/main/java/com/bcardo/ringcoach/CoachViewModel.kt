@@ -290,7 +290,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     json
                 }
                 nightlySnapshot = context.optJSONObject("nightly_recovery")
-                val packaged = withContext(Dispatchers.IO) { CoachingRequestPackager.prepare(context, asset("coach-system.txt")) }
+                val packaged = withContext(Dispatchers.IO) { CoachingRequestPackager.prepare(context, asset("coach-system.txt"), onSize = { size -> CoachingRequestSizeStore.record(getApplication(), size) }) }
                 requestManifest = packaged.retainedContext.getJSONObject("request_manifest")
                 prepared = PreparedCoaching(date, packaged.retainedContext, packaged.request)
             } catch (exception: CancellationException) {
