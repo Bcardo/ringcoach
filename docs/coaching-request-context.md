@@ -30,6 +30,6 @@ Actual model usage tokens, provider latency and monetary cost are not captured b
 
 ## Freshness and automation
 
-The manifest checks target-date vendor metrics rather than trusting an old source-level `available` flag. It records the latest retained HRV date, last screen check, and whether Android has the accessibility service configured and connected. Today explains missing HRV and a disabled/disconnected reader. These warnings do not enable accessibility automatically or imply unattended capture works.
+The manifest checks target-date vendor metrics rather than trusting an old source-level `available` flag. It records the latest retained vendor HRV date, separate Ring session/HRV-window counts and `screen_capture_mode=retired`. Screen configured/connected fields and screen-activation prompts are removed. Missing vendor summaries do not block preparation, substitute Bluetooth windows into daily HRV, or request screenshots. All coaching uses available dated evidence without a Samsung Health screen workflow.
 
 A read-only owner audit can package current data in memory with `CurrentContextOwnerAuditTest` (`-e audit_context true`) and report counts without sending another request or saving another card. Synthetic `DetailedCoachingContextTest` and `DetailedCoachingStoreTest` exercise exact request preservation, overlap/offset behavior, omission budgets, SQLite trace removal and a live synthetic request (`-e live_detailed true`). Personal audit artifacts stay under ignored `private/`.

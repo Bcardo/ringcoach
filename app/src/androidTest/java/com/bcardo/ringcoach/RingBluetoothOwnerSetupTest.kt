@@ -27,28 +27,6 @@ class RingBluetoothOwnerSetupTest {
     private val args = InstrumentationRegistry.getArguments()
     private fun optIn() = assumeTrue(args.getString("ring_owner_setup") == "true")
 
-    /** Owner-requested daily-summary backfill; no model request or permission changes. */
-    @Test fun refreshExistingDailyHrvReader() {
-        optIn()
-        assumeTrue(args.getString("refresh_daily_hrv") == "true")
-        assertTrue("Reader must already be configured", SamsungHealthScreenReader.configured(context))
-        assertTrue("Reader must already be bound", SamsungHealthScreenReader.enabled)
-        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
-        val success = try {
-            kotlinx.coroutines.runBlocking {
-                kotlinx.coroutines.withTimeout(40_000) {
-                    kotlinx.coroutines.withContext(scope.coroutineContext) {
-                        SamsungHealthScreenReader.awaitActiveCapture()
-                        kotlinx.coroutines.delay(500)
-                        SamsungHealthScreenReader.capture(force = true)
-                    }
-                }
-            }
-        } finally { scope.coroutineContext[kotlinx.coroutines.Job]?.cancel() }
-        assertTrue("Reader configuration changed", SamsungHealthScreenReader.configured(context))
-        assertTrue("Daily HRV capture incomplete; inspect reader status", success)
-    }
-
     @Test fun queueAdviceForAlreadyImportedSleep() {
         optIn()
         assumeTrue(args.getString("queue_saved_sleep_advice") == "true")

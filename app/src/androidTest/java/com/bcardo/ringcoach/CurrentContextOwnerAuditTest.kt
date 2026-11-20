@@ -33,10 +33,10 @@ class CurrentContextOwnerAuditTest {
             facts.put("telemetry", HealthConnectProbe(HealthConnectClient.getOrCreate(context)).coachingSnapshot(date))
                 .put("telemetry_status", "checked")
             NightlyRecoveryStore(context).use { recovery ->
-                facts.put("nightly_recovery", recovery.snapshot(date).put("screen_reader_configured", SamsungHealthScreenReader.configured(context))
-                    .put("screen_reader_connected", SamsungHealthScreenReader.enabled))
+                facts.put("nightly_recovery", recovery.snapshot(date))
                     .put("recovery_history", CoachingRecoveryHistory.compact(recovery.history(date.minusDays(30), date.minusDays(1)), date))
             }
+            RingBluetoothStore(context).use { facts.put("ring_bluetooth", it.snapshot(date)) }
             val packaged = try { CoachingRequestPackager.prepare(facts, prompt) } catch (e: CoachingPayloadTooLarge) {
                 instrumentation.sendStatus(0, android.os.Bundle().apply { putString("stream", "CONTEXT_OWNER_BUDGET ${e.manifest}\n") })
                 throw e

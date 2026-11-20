@@ -173,7 +173,7 @@ internal class DailyRecoveryArchive(private val db: SQLiteDatabase) {
             .put("policy_version", RECOVERY_HISTORY_POLICY).put("days", days)
             .put("sync", db.rawQuery("SELECT source,status,checked_at FROM sync_state ORDER BY source", null).use { c ->
                 JSONArray().apply { while (c.moveToNext()) put(JSONObject().put("source", c.getString(0))
-                    .put("status", c.getString(1)).put("checked_at", c.getString(2))) }
+                    .put("status", if (c.getString(0) == "samsung_health_screen") "retained_history_only" else c.getString(1)).put("checked_at", c.getString(2))) }
             })
             .put("query_scope", "locally_archived_observations_not_source_backfill")
     }

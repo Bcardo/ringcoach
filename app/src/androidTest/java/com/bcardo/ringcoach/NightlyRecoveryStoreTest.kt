@@ -10,6 +10,27 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class NightlyRecoveryStoreTest {
+    @Test fun retiredScreenStatusPreservesHistoricalReadingsAndRevisions() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val name = "retired-screen-${UUID.randomUUID()}.db"
+        val date = LocalDate.of(2026, 1, 5)
+        try {
+            NightlyRecoveryStore(context, name).use { store ->
+                store.put(NightlyMetric(date, "sleeping_hrv", 60.0, "ms", "samsung_health_screen", "daily"))
+                store.status("samsung_health_screen", "capture_incomplete:reading_daily_summary")
+                val revisions = store.revisions(date, "sleeping_hrv").toString()
+                val snapshot = store.snapshot(date)
+                assertEquals("retired", snapshot.getString("screen_capture_mode"))
+                assertEquals("retained_history_only", snapshot.getJSONArray("sync").getJSONObject(0).getString("status"))
+                assertEquals(60.0, snapshot.getJSONArray("records").getJSONObject(0).getDouble("value"), 0.0)
+                assertEquals(revisions, store.revisions(date, "sleeping_hrv").toString())
+            }
+            NightlyRecoveryStore(context, name).use { store ->
+                assertEquals(1, store.snapshot(date).getJSONArray("records").length())
+            }
+        } finally { context.deleteDatabase(name) }
+    }
+
     @Test fun revisesDailyScoreWithoutDuplicatingOrMixingHrv() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "nightly-test-${UUID.randomUUID()}.db"

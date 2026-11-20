@@ -189,12 +189,11 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         }
     }
 
-    fun refreshNightly(date: LocalDate = LocalDate.now(), readScreen: Boolean = false, forceScreen: Boolean = false) {
+    fun refreshNightly(date: LocalDate = LocalDate.now()) {
         if (nightlySyncing) return
         nightlySyncing = true
         viewModelScope.launch {
             try {
-                if (readScreen && SamsungHealthScreenReader.enabled && (forceScreen || SamsungHealthScreenReader.needsCapture(getApplication()))) SamsungHealthScreenReader.capture(forceScreen)
                 nightlySnapshot = withContext(Dispatchers.IO) { SamsungNightlyReader.refresh(getApplication(), date) }
             }
             catch (e: CancellationException) { throw e }
@@ -265,7 +264,6 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         notice = null
         viewModelScope.launch {
             try {
-                if (SamsungHealthScreenReader.enabled) SamsungHealthScreenReader.capture()
                 var telemetryStatus = "unavailable"
                 val telemetry = if (probe == null) null else try {
                     healthReadGate.read(onWaiting = { waitingForHealthRead = it }) {
@@ -282,9 +280,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     store.latestCoachCard(date)?.let {
                         json.put("previous_advice", it.advice.toJson())
                     }
-                    json.put("nightly_recovery", SamsungNightlyReader.refresh(getApplication(), date)
-                        .put("screen_reader_configured", SamsungHealthScreenReader.configured(getApplication()))
-                        .put("screen_reader_connected", SamsungHealthScreenReader.enabled))
+                    json.put("nightly_recovery", SamsungNightlyReader.refresh(getApplication(), date))
                     RingBluetoothStore(getApplication()).use { json.put("ring_bluetooth", it.snapshot(date)) }
                     NightlyRecoveryStore(getApplication()).use { history ->
                         json.put("recovery_history", CoachingRecoveryHistory.compact(history.history(date.minusDays(30), date.minusDays(1)), date))

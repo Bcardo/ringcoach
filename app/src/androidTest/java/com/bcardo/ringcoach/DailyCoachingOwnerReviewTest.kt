@@ -8,7 +8,6 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -51,7 +50,6 @@ class DailyCoachingOwnerReviewTest {
         optIn("review_screens")
         val ui = instrumentation.getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
         ui.serviceInfo = ui.serviceInfo.apply { flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS }
-        runBlocking { SamsungHealthScreenReader.awaitActiveCapture() }
         context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
         fun nodes(): List<AccessibilityNodeInfo> = buildList {
             ui.clearCache()

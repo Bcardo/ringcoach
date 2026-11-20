@@ -1,8 +1,12 @@
 # Galaxy Ring Bluetooth HRV investigation
 
-**Current status (November 14):** The passive overnight recorder captured a morning health transfer containing timestamped feature-150 HRV, heart rate, sleep, respiration, movement, skin temperature, stress and encoded blood-oxygen data. The decoder now consumes the complete transfer. Older HRV windows match the existing Samsung reference; the fresh night's windows still need a same-night reference. Multi-night reliability and independent operation without Samsung's companion remain unverified. The installed RingCoach production path still uses the SDK/screen readers described in [nightly recovery integration](nightly-recovery.md). See the [standalone research app](../research/bluetooth-probe/README.md).
+**Research checkpoint (November 14; see November 20 follow-up below):** The passive overnight recorder captured a morning health transfer containing timestamped feature-150 HRV, heart rate, sleep, respiration, movement, skin temperature, stress and encoded blood-oxygen data. The decoder now consumes the complete transfer. Older HRV windows match the existing Samsung reference; the fresh night's windows still need a same-night reference. Multi-night reliability and independent operation without Samsung's companion remain unverified. The current production paths and retired screen adapter are described in [nightly recovery integration](nightly-recovery.md). See the [standalone research app](../research/bluetooth-probe/README.md).
 
 [Issue #9](https://github.com/Bcardo/ringcoach/issues/9) tracks whether RingCoach can fetch fresh overnight HRV from the Galaxy Ring. Samsung's personal export includes `rmssd`, `sdnn`, `start_time`, and `end_time` in a dedicated HRV sidecar. The export can serve as a reference for a captured night.
+
+## November 20 production follow-up
+
+Read-only archive inspection found live-origin sleep sessions on four distinct new wake dates, received on each wake date with overlapping HRV and other sensor statistics. Morning jobs were complete for those dates. A gap remains on an intervening date, and the collector was reconnecting during the audit. This is fresh production reception evidence, not uninterrupted reliability or a same-night numerical reference comparison. All coaching now uses available Bluetooth/SDK/Health Connect/history without screen navigation; the former Samsung page reader is retired. #9 remains open for window-reference/units validation; #28 tracks broader reliability.
 
 ## Capture a normal sync
 
