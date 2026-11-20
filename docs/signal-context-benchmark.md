@@ -1,6 +1,6 @@
 # Proposed signal-context comparison
 
-Status: proposed experiment, not a completed benchmark or a new production two-stage pipeline. The current implementation is the provisional hybrid: deterministic statistics/coverage plus relevant exact sleep intervals and timestamped HR samples in the same coaching request as current daily facts. Actual source data is sampled Health Connect HR and sleep stages, not raw Ring PPG or beat-to-beat sensor signals.
+Status: a test-only [synthetic screening harness](signal-comparison-screen.md) now implements the initial controlled comparison. The personal 14-day pilot is not started, and there is no production two-stage pipeline. The current production implementation is the provisional hybrid: deterministic statistics/coverage plus relevant exact sleep intervals and timestamped HR samples in the same coaching request as current daily facts. Actual source data is sampled Health Connect HR and sleep stages, not raw Ring PPG or beat-to-beat sensor signals.
 
 ## Exactly two methods
 
