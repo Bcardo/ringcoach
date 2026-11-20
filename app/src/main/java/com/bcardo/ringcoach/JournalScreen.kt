@@ -79,12 +79,9 @@ internal fun JournalApp(
                         Text(today.toString())
                         val feedback = coach.dailyCoaching?.takeIf { it.date == today }
                         val card = feedback?.card
-                        Text("教练建议", style = MaterialTheme.typography.titleLarge)
-                        if (card == null) Text("今日暂无建议。可在日志中告诉教练你的近况或问题。") else {
-                            Text("更新于 ${coachCardTimestamp(card.createdAt)}", style = MaterialTheme.typography.bodySmall)
-                            card.advice.notes.forEach { Text("• $it") }
-                        }
+                        DailyDecisionPanel(today, feedback) { tab = "training" }
                         ProgressStatus(coach, today) { coach.retryProgress(probe) }
+                        DailyNightPanel(today, coach.foreground)
                         DailyIntakeCard(nutrition.days.firstOrNull { it.date == today }, nutrition.syncing,
                             card)
                     }
