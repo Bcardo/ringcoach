@@ -12,7 +12,7 @@ Research date: 2026-11-15. Product proposal; corresponding roadmap issues have n
 - [#38 — Periodic/repeated-pattern review](https://github.com/Bcardo/ringcoach/issues/38): isolated versus sustained compatible changes, with daytime resilience limitations.
 - [#41 — UI integration](https://github.com/Bcardo/ringcoach/issues/41): concise Today, visible training plan and evidence drill-down.
 
-The first #59 presentation milestone is now implemented in source: [daily decision and night-record panels](daily-decision-panel.md). It is not installed on the owner's app; broader #59 acceptance and the remaining roadmap stay open. Reliability remains tracked independently in #52/#57.
+The first #59 presentation milestone is implemented and installed on 2026-11-20: [daily decision and night-record panels](daily-decision-panel.md). Broader #59 acceptance and the remaining roadmap stay open. Reliability remains tracked independently in #52/#57.
 
 The owner's goal is timely interpretation of body signals and useful coaching connected to the saved training plan. Samsung Health already supplies general trend browsing. Recreating a broad metrics dashboard has lower priority than making each recovery observation relevant to a decision.
 

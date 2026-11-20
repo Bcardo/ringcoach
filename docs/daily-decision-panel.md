@@ -1,6 +1,6 @@
 # Daily decision panel: first #59 delivery
 
-Source implementation, not an installed feature or completed ordinary-use acceptance. Parent roadmap: #58. This adapts Oura's contextual Today pattern into the existing four-tab app. The owner's installed #65 build remains unchanged while this draft is reviewed.
+Installed first milestone on 2026-11-20; broader ordinary-use acceptance remains open. Parent roadmap: #58. This adapts Oura's contextual Today pattern into the existing four-tab app. The panel APK replaces the original #65 build with identical coaching requests/prompt/policy; record the UI version boundary when reviewing normal-use evidence.
 
 ## Today
 
@@ -28,6 +28,14 @@ A debug-only `PanelPreviewActivity` uses entirely synthetic inputs. It is disabl
 
 Synthetic previews were visually checked at local 360/720 dp widths, 1.4 font scale, pending/missing states, expanded advice/night details and scrolling. These are layout simulations on the phone, not actual hardware-fold acceptance. The preview training link opens a synthetic stub; the production callback targets the existing Training tab. No real-card UI acceptance is claimed. Screenshots stay private; no UI text/readings/screenshots are posted to GitHub.
 
-After preview removal, the owner's main APK hash and accessibility configuration were unchanged, with legacy service binding still present. Owner databases, permissions and collection settings were not accessed or altered by the preview activity. No production APK replacement, real-app instrumentation/force-stop, fresh-night acceptance or ordinary-use reliability claim. Keep #59 open for reviewed integration/install and the remaining semantic/usability acceptance; keep #58/#35/#60/#28/#64 and #52/#56/#57 scoped independently.
+After preview removal, the owner's main APK hash and accessibility configuration were unchanged, with legacy service binding still present. Owner databases, permissions and collection settings were not accessed or altered by the preview activity.
+
+## Subsequent owner installation
+
+At the owner's request, the reviewed normal panel APK was installed in place on 2026-11-20 (UI source `a7540a0`). The previous APK/private state were backed up first. Installed APK matches the reviewed build; journals, submissions, plans/settings, food/workout/photo tables, existing advice and retained screen history were unchanged, database integrity OK, pending feedback zero. Ring opt-in, legacy reader configuration/preferences and binding were preserved. Collector connected/subscribed flags were false at verification; no fresh reception or reconnect fix is claimed.
+
+The opt-in `DailyDecisionNavigationTest` passed on the installed app through the required no-restart wrapper: daily focus, night panel and shortcut to the actual Training tab. It submits nothing, logs no owner UI text or readings, requests UiAutomation's do-not-suppress flag, and restores its temporary activity keep-awake flag. Initial harness attempts failed on duplicate/non-actionable labels and a sleeping display; after a rendered-frame wait/fixed-label touch fallback, the check passed. These were test-harness failures, not ordinary submissions or extra model calls.
+
+No force-stop or permission toggles. The #65 observation continues with the original baseline retained and this UI-version boundary recorded; the coaching prompt remains `coach-v16-lossless-context`. Installation/navigation checks do not count as new ordinary-use successes or fresh-night reliability. Keep #59 open for the remaining semantic/usability and actual fold-layout acceptance; keep #58/#35/#60/#28/#64 and #52/#56/#57 scoped independently.
 
 Reference verified 2026-11-20: [Oura's contextual Today and detailed Vitals organization](https://support.ouraring.com/hc/en-us/articles/360058599753-How-to-Use-the-Oura-App), [personal readiness contributors](https://support.ouraring.com/hc/en-us/articles/360057791533-Readiness-Contributors). This borrows the interface pattern, not Oura's score or proprietary methods.
