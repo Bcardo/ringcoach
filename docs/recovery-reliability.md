@@ -10,7 +10,7 @@ The collector's opt-in setting, foreground process, fresh heartbeat, connected/s
 
 The November 20 audit found fresh live-origin sleep/HRV on four distinct new wake dates with reception on each wake date and corresponding completed morning jobs. One intervening date lacks a live sleep record, and the collector was reconnecting when checked. The cause of that gap and uninterrupted delivery are unverified. Imported November 14 research data is separate and does not add acceptance nights. No forced scheduler run or synthetic replay adds ordinary-use evidence.
 
-Follow #9 for matching timestamped windows/units to a private same-night reference; follow #28 for gap recovery, idle/reboot coverage and source/coaching inclusion. Keep both open while their remaining acceptance items are unverified. The 14-day comparison pilot (#50) has not started.
+The Bluetooth retrieval investigation #9 is complete. Its outstanding numerical-reference criterion is transferred to #64 for matching timestamped windows/units to a private same-night reference; #28 retains gap recovery, idle/reboot coverage and source/coaching inclusion. Keep #64 and #28 open while those acceptance items are unverified. Closing the retrieval milestone does not establish numerical accuracy or uninterrupted reliability. The 14-day comparison pilot (#50) has not started.
 
 ## Physical checks
 
