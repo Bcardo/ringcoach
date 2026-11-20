@@ -12,7 +12,7 @@ Research date: 2026-11-15. Product proposal; corresponding roadmap issues have n
 - [#38 — Periodic/repeated-pattern review](https://github.com/Bcardo/ringcoach/issues/38): isolated versus sustained compatible changes, with daytime resilience limitations.
 - [#41 — UI integration](https://github.com/Bcardo/ringcoach/issues/41): concise Today, visible training plan and evidence drill-down.
 
-All are planned/open; creation or clarification does not claim implementation. Reliability remains tracked independently in #52/#57.
+The first #59 presentation milestone is implemented and installed on 2026-11-20: [daily decision and night-record panels](daily-decision-panel.md). Broader #59 acceptance and the remaining roadmap stay open. Reliability remains tracked independently in #52/#57.
 
 The owner's goal is timely interpretation of body signals and useful coaching connected to the saved training plan. Samsung Health already supplies general trend browsing. Recreating a broad metrics dashboard has lower priority than making each recovery observation relevant to a decision.
 
@@ -40,7 +40,7 @@ The highest-value differentiator is connecting physiology to the owner's actual 
 
 ## Data gates
 
-- Passive Bluetooth HRV is still labeled experimental and lacks fresh-night production reliability/same-night reference acceptance. Preserve separate definitions for windowed RMSSD/SDNN and Samsung daily sleeping HRV.
+- Passive Bluetooth HRV is still labeled experimental and lacks fresh-night production reliability/same-night reference acceptance (#28/#64; discovery #9 is closed). Preserve separate definitions for windowed RMSSD/SDNN and Samsung daily sleeping HRV.
 - A sampled overnight HR minimum is not a continuously observed settling point or vendor resting HR. Do not present it as an Oura Recovery Index equivalent.
 - Bluetooth sleep span is not time asleep; temperature calibration and raw oxygen/R-R interpretation remain unresolved.
 - Multi-day classification needs sufficient distinct compatible nights. Daytime stress/resilience also needs reliable daytime signals; six decoded stress records do not establish that capability.
