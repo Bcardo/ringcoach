@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
         val elapsed = android.os.SystemClock.elapsedRealtime()
         if (changedDate || elapsed - lastForegroundSync > 300_000) {
             lastForegroundSync = elapsed
-            ViewModelProvider(this)[CoachViewModel::class.java].refreshNightly(readScreen = true)
+            ViewModelProvider(this)[CoachViewModel::class.java].refreshNightly()
         }
     }
 
@@ -111,7 +111,7 @@ class MainActivity : ComponentActivity() {
         val coach = ViewModelProvider(this)[CoachViewModel::class.java]
         NightlySyncJob.schedule(this)
         lastForegroundSync = android.os.SystemClock.elapsedRealtime()
-        coach.refreshNightly(readScreen = true)
+        coach.refreshNightly()
         val workouts = ViewModelProvider(this)[WorkoutViewModel::class.java]
         val coachHistory = ViewModelProvider(this)[CoachHistoryViewModel::class.java]
         val nutrition = ViewModelProvider(this)[NutritionViewModel::class.java]

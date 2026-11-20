@@ -2,8 +2,8 @@
 <resources>
     <string name="progress_submitted">进度已提交，正在更新摄入、训练计划与建议。</string>
     <string name="nutrition_invalid_response">饮食分析结果的格式或来源校验未通过。照片和文字已保留，可重试分析。</string>
-    <string name="samsung_screen_reader_label">RingCoach 睡眠 HRV 读取</string>
-    <string name="samsung_screen_reader_description">仅在 RingCoach 发起同步时，读取三星健康能量得分页面中最近七天的能量得分和睡眠 HRV，保存到本机并返回 RingCoach。同步时会短暂显示三星健康；不会操作其他应用或更改健康记录。可随时关闭。</string>
+    <string name="samsung_screen_reader_label">RingCoach 旧版兼容服务</string>
+    <string name="samsung_screen_reader_description">旧版兼容服务，已停止页面读取。不会打开三星健康或读取屏幕；恢复数据使用戒指蓝牙、已授权的数据接口和已保存的历史。可在系统设置中关闭此服务。</string>
     <string name="daily_add_meal">追加一餐（文字）</string>
     <string name="daily_meals_title">今日逐餐记录 · 文字或照片</string>
     <string name="daily_submit_all">保存并分析全部</string>

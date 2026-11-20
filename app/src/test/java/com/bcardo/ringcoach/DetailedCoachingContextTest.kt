@@ -33,8 +33,7 @@ class DetailedCoachingContextTest {
         .put("progress_submission", JSONObject().put("id", "trigger").put("text", "已吃午餐"))
         .put("daily_nutrition", JSONArray()).put("journal_history", JSONArray())
         .put("telemetry_status", "checked").put("telemetry", JSONObject().put("current_night", night))
-        .put("nightly_recovery", JSONObject().put("records", JSONArray())
-            .put("screen_reader_configured", false).put("screen_reader_connected", false))
+        .put("nightly_recovery", JSONObject().put("records", JSONArray()))
 
     @Test fun originalStagesAndExactInSessionSampleTimesReachSerializedModelRequest() {
         val original = context()
@@ -141,7 +140,7 @@ class DetailedCoachingContextTest {
         assertFalse(packed.retainedContext.getJSONObject("telemetry").getJSONObject("current_night").getJSONArray("heart_rate_series").getJSONObject(0).has("samples"))
     }
 
-    @Test fun missingTargetDayHrvAndDisconnectedReaderAreVisibleEvenWhenOldSyncSaysAvailable() {
+    @Test fun missingTargetDayVendorHrvStaysExplicitAfterScreenCaptureRetires() {
         val input = context()
         input.getJSONObject("nightly_recovery").put("records", JSONArray().put(JSONObject().put("wake_date", date.minusDays(1).toString())
             .put("metric", "sleeping_hrv").put("value", 40)))
@@ -149,8 +148,25 @@ class DetailedCoachingContextTest {
         val freshness = CoachingRequestPackager.prepare(input, "Coach").retainedContext.getJSONObject("request_manifest").getJSONObject("freshness")
         assertFalse(freshness.getBoolean("target_date_recovery_complete"))
         assertEquals(date.minusDays(1).toString(), freshness.getString("latest_sleeping_hrv_date"))
-        assertFalse(freshness.getBoolean("screen_reader_configured"))
+        assertEquals("retired", freshness.getString("screen_capture_mode"))
+        assertFalse(freshness.has("screen_reader_configured"))
         assertTrue(freshness.getJSONArray("missing_target_date_vendor_metrics").toString().contains("sleeping_hrv"))
+    }
+
+    @Test fun bluetoothEvidenceIsUsableWithoutVendorDailySummaryOrScreenReader() {
+        val input = context().put("ring_bluetooth", JSONObject()
+            .put("source", "direct_bonded_galaxy_ring_bluetooth")
+            .put("sessions", JSONArray().put(JSONObject().put("wake_date", date.toString())
+                .put("metrics", JSONObject().put("hrv_rmssd", JSONObject().put("sample_count", 12).put("mean", 61.5))))))
+        val packed = CoachingRequestPackager.prepare(input, "Coach")
+        val manifest = packed.retainedContext.getJSONObject("request_manifest")
+        assertEquals(1, manifest.getJSONObject("ring_bluetooth").getInt("target_date_session_count"))
+        assertEquals(12, manifest.getJSONObject("ring_bluetooth").getInt("target_date_hrv_window_count"))
+        assertEquals(61.5, packed.retainedContext.getJSONObject("ring_bluetooth").getJSONArray("sessions")
+            .getJSONObject(0).getJSONObject("metrics").getJSONObject("hrv_rmssd").getDouble("mean"), 0.0)
+        assertFalse(manifest.getJSONObject("freshness").getBoolean("target_date_recovery_complete"))
+        assertEquals(0, packed.retainedContext.getJSONObject("nightly_recovery").getJSONArray("records").length())
+        assertEquals("retired", manifest.getJSONObject("freshness").getString("screen_capture_mode"))
     }
 
     @Test fun historyPartitionsSourcesAndKeepsGapsWithoutInventingBaseline() {

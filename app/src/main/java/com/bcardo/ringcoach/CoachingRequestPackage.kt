@@ -128,8 +128,6 @@ internal object CoachingRequestPackager {
         val records = recovery?.optJSONArray("records") ?: JSONArray()
         val readings = (0 until records.length()).map { records.getJSONObject(it) }
         val missing = DAILY_RECOVERY_METRICS.filter { metric -> readings.none { it.optString("wake_date") == date && it.optString("metric") == metric } }
-        val sync = recovery?.optJSONArray("sync") ?: JSONArray()
-        val checks = (0 until sync.length()).map { sync.getJSONObject(it) }
         val history = context.optJSONObject("recovery_history")
         val ring = context.optJSONObject("ring_bluetooth")
         val nutritionDays = context.optJSONArray("daily_nutrition") ?: JSONArray()
@@ -165,9 +163,7 @@ internal object CoachingRequestPackager {
             .put("recovery_series_coverage", history?.optJSONArray("series_coverage") ?: JSONArray())
             .put("freshness", JSONObject().put("missing_target_date_vendor_metrics", JSONArray(missing))
                 .put("latest_sleeping_hrv_date", readings.filter { it.optString("metric") == "sleeping_hrv" }.maxOfOrNull { it.getString("wake_date") } ?: JSONObject.NULL)
-                .put("screen_reader_configured", recovery?.opt("screen_reader_configured") ?: JSONObject.NULL)
-                .put("screen_reader_connected", recovery?.opt("screen_reader_connected") ?: JSONObject.NULL)
-                .put("screen_last_check", checks.firstOrNull { it.optString("source") == "samsung_health_screen" }?.opt("checked_at") ?: JSONObject.NULL)
+                .put("screen_capture_mode", "retired")
                 .put("target_date_recovery_complete", missing.isEmpty()))
     }
 

@@ -48,9 +48,7 @@ internal class RingMorningProcessor(
                 if (journalDatabase == "ringcoach.db") {
                     val telemetry = ProgressHealth.forJob(context, journalDatabase, date, journal)
                     if (telemetry != null) data.put("telemetry", telemetry).put("telemetry_status", "checked")
-                    data.put("nightly_recovery", SamsungNightlyReader.refresh(context, date)
-                        .put("screen_reader_configured", SamsungHealthScreenReader.configured(context))
-                        .put("screen_reader_connected", SamsungHealthScreenReader.enabled))
+                    data.put("nightly_recovery", SamsungNightlyReader.refresh(context, date))
                     NightlyRecoveryStore(context).use { history -> data.put("recovery_history",
                         CoachingRecoveryHistory.compact(history.history(date.minusDays(30), date.minusDays(1)), date)) }
                 }

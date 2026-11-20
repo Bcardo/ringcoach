@@ -110,10 +110,7 @@ internal class ProgressProcessor(
                 // Test databases never read the owner's Samsung data or recovery archive.
                 if (database == "ringcoach.db") {
                     RingBluetoothStore(context).use { data.put("ring_bluetooth", it.snapshot(pending.date)) }
-                    SamsungHealthScreenReader.awaitActiveCapture()
-                    data.put("nightly_recovery", SamsungNightlyReader.refresh(context, pending.date)
-                        .put("screen_reader_configured", SamsungHealthScreenReader.configured(context))
-                        .put("screen_reader_connected", SamsungHealthScreenReader.enabled))
+                    data.put("nightly_recovery", SamsungNightlyReader.refresh(context, pending.date))
                     NightlyRecoveryStore(context).use { history -> data.put("recovery_history",
                         CoachingRecoveryHistory.compact(history.history(pending.date.minusDays(30), pending.date.minusDays(1)), pending.date)) }
                 }

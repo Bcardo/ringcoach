@@ -17,68 +17,9 @@ import java.util.concurrent.TimeUnit
 /** Opt-in, read-only capability probe. Never subscribes, writes commands, or changes pairing. */
 @RunWith(AndroidJUnit4::class)
 class NightlyAccessResearchTest {
-    @Test fun dumpScreen() {
-        assumeTrue(InstrumentationRegistry.getArguments().getString("screenResearch") == "true")
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val automation = instrumentation.getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
-        automation.serviceInfo = automation.serviceInfo.apply {
-            flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                android.accessibilityservice.AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-        }
-        try { automation.waitForIdle(500, 5000) } catch (_: Exception) { }
-        val items = org.json.JSONArray()
-        fun visit(node: android.view.accessibility.AccessibilityNodeInfo, depth: Int) {
-            val rect = android.graphics.Rect().also(node::getBoundsInScreen)
-            items.put(org.json.JSONObject().put("id", node.viewIdResourceName)
-                .put("clickable", node.isClickable).put("scrollable", node.isScrollable).put("depth", depth).put("bounds", rect.toShortString()))
-            for (i in 0 until node.childCount) node.getChild(i)?.let { visit(it, depth + 1) }
-        }
-        automation.rootInActiveWindow?.let { visit(it, 0) }
-        java.io.File(instrumentation.targetContext.filesDir, "research-screen.json").writeText(items.toString(2))
-        println("RING_RESEARCH screen_nodes=${items.length()}")
-        if (InstrumentationRegistry.getArguments().getString("scroll") == "true") {
-            fun scroll(node: android.view.accessibility.AccessibilityNodeInfo): Boolean {
-                if (node.isScrollable && node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return true
-                for (i in 0 until node.childCount) node.getChild(i)?.let { if (scroll(it)) return true }
-                return false
-            }
-            println("RING_RESEARCH scrolled=${automation.rootInActiveWindow?.let(::scroll)}")
-        }
-        val label = InstrumentationRegistry.getArguments().getString("clickLabel")
-        val id = InstrumentationRegistry.getArguments().getString("clickId")
-        if (label != null || id != null) {
-            fun find(node: android.view.accessibility.AccessibilityNodeInfo): android.view.accessibility.AccessibilityNodeInfo? {
-                if ((label != null && (node.text?.toString() == label || node.contentDescription?.toString()?.trim() == label)) ||
-                    (id != null && node.viewIdResourceName == id)) return node
-                for (i in 0 until node.childCount) node.getChild(i)?.let { find(it)?.let { found -> return found } }
-                return null
-            }
-            var target = automation.rootInActiveWindow?.let(::find)
-            while (target != null && !target.isClickable) target = target.parent
-            val repetitions = InstrumentationRegistry.getArguments().getString("clickCount")?.toIntOrNull()?.coerceIn(1, 15) ?: 1
-            repeat(repetitions) { println("RING_RESEARCH clicked=${target?.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)}") }
-        }
-    }
-
     @Test fun inspectAvailableInterfaces() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("ringResearch") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val automation = instrumentation.getUiAutomation(android.app.UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
-        automation.serviceInfo = automation.serviceInfo.apply {
-            flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-        }
-        try { automation.waitForIdle(500, 5000) } catch (_: Exception) { }
-        val root = automation.rootInActiveWindow
-        println("RING_RESEARCH accessibility_root=${root != null} windows=${automation.windows.size}")
-        root?.let {
-            val labels = mutableListOf<String>()
-            fun visit(node: android.view.accessibility.AccessibilityNodeInfo) {
-                node.text?.toString()?.takeIf(String::isNotBlank)?.let(labels::add)
-                for (i in 0 until node.childCount) node.getChild(i)?.let(::visit)
-            }
-            visit(it)
-            println("RING_RESEARCH active_package=${it.packageName} label_count=${labels.size}")
-        }
         val context = instrumentation.targetContext
         assumeTrue("Research requires existing owner-granted Bluetooth access",
             context.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == android.content.pm.PackageManager.PERMISSION_GRANTED)

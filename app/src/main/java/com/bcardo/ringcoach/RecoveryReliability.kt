@@ -3,7 +3,6 @@ package com.bcardo.ringcoach
 import android.content.Context
 import android.content.pm.PackageManager
 import android.provider.Settings
-import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -11,7 +10,6 @@ import java.time.LocalDate
 
 /** Bounded local operational metadata only: no readings, UI text, photos, credentials or sample arrays. */
 internal object RecoveryReliability {
-    val revision = MutableStateFlow(0L)
     private fun prefs(context: Context) = context.getSharedPreferences("recovery-reliability", Context.MODE_PRIVATE)
 
     @Synchronized fun observe(context: Context, event: String, detail: JSONObject? = null) {
@@ -29,12 +27,7 @@ internal object RecoveryReliability {
             for (i in maxOf(0, previous.length() - 63) until previous.length()) events.put(previous.get(i))
             events.put(row)
             preferences.edit().putString("events", events.toString()).apply()
-            revision.value++
         }
-    }
-
-    @Synchronized fun captured(context: Context, date: LocalDate) {
-        updateDay(context, date) { it.put("captured_at", Instant.now().toString()) }
     }
 
     /** Called only after successful response persistence, using the exact retained request context. */
@@ -54,7 +47,6 @@ internal object RecoveryReliability {
             update(row); days.put(date.toString(), row)
             days.keys().asSequence().toList().filter { it < LocalDate.now().minusDays(30).toString() }.forEach { days.remove(it) }
             preferences.edit().putString("days", days.toString()).apply()
-            revision.value++
         }
     }
 }

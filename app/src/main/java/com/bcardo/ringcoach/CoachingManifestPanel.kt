@@ -35,12 +35,10 @@ internal fun CoachingManifestPanel(manifest: JSONObject?) {
             Text("健康数据采集于 ${manifest.optString("health_captured_at")}；本次使用已保留的睡眠区间和心率统计，未发送逐点心率。")
         val missing = freshness.optJSONArray("missing_target_date_vendor_metrics")
         val labels = (0 until (missing?.length() ?: 0)).map { index ->
-            if (missing!!.getString(index) == "sleeping_hrv") "今日睡眠 HRV" else "今日能量得分"
+            if (missing!!.getString(index) == "sleeping_hrv") "今日三星每日睡眠 HRV" else "今日能量得分"
         }
         if (labels.isNotEmpty()) Text("本次缺少：${labels.joinToString("、")}。")
-        if (!freshness.isNull("latest_sleeping_hrv_date")) Text("最近已采集 HRV 日期：${freshness.optString("latest_sleeping_hrv_date")}")
-        if (freshness.has("screen_reader_configured") && !freshness.isNull("screen_reader_configured") && !freshness.optBoolean("screen_reader_configured"))
-            Text("HRV 自动读取未启用，可在设置中开启辅助功能。")
+        if (!freshness.isNull("latest_sleeping_hrv_date")) Text("最近已保存的三星每日 HRV 日期：${freshness.optString("latest_sleeping_hrv_date")}")
     }
     val omissions = manifest.optJSONArray("omissions")
     for (index in 0 until (omissions?.length() ?: 0)) {
