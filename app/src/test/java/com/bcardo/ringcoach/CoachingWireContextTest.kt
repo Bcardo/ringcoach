@@ -163,6 +163,9 @@ class CoachingWireContextTest {
                 for (i in 0 until days.length()) for (metric in listOf("energy_score", "sleeping_hrv"))
                     days.getJSONObject(i).getJSONObject(metric).put("status", "available").put("value", 40 + i).put("source", "synthetic_source")
             }
+            // Exercise-note schema/ref overhead must be included in the full production budget.
+            source.put("exercise_baselines", JSONArray().put(ExerciseBaseline("Day A", "Synthetic press", "Saved reference", LocalDate.of(2026, 6, 1)).toJson()))
+            source.getJSONArray("latest_workout_records").getJSONObject(0).put("date", "2026-06-12")
             for ((promptKind, prompt) in listOf("short" to "Use only source-backed facts.", "production" to productionPrompt)) {
             val packed = CoachingRequestPackager.prepare(source, prompt)
             if (promptKind == "short") assertTrue("Short-prompt corpus needs headroom: $kind", packed.size.requestBytes < 112 * 1024)
@@ -170,6 +173,8 @@ class CoachingWireContextTest {
             assertTrue(packed.size.encoded)
             assertTrue(packed.size.requestBytes < packed.size.unpackedBytes)
             val facts = JSONObject(packed.request.getJSONArray("messages").getJSONObject(1).getString("content"))
+            assertEquals("e1", facts.getJSONArray("exercise_baselines").getJSONObject(0).getString("followup_ref"))
+            assertTrue(packed.request.getJSONObject("response_format").getJSONObject("json_schema").getJSONObject("schema").getJSONObject("properties").has("exercise_notes"))
             // The API places this one copy in the system message.
             facts.put("instructions", source.getString("instructions"))
             val restored = CoachingWireTestDecoder.expand(facts)

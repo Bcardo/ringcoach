@@ -793,7 +793,7 @@ internal class JournalStore(context: Context, name: String = "ringcoach.db") :
             ON CONFLICT(id) DO NOTHING
         """.trimIndent(), arrayOf<Any>(
             card.id, card.date.toString(), card.createdAt.toEpochMilli(), card.model,
-            card.promptVersion, CoachingSnapshot.retainedJson(card.contextJson), card.advice.toJson().toString(),
+            card.promptVersion, CoachingSnapshot.retainedJson(card.contextJson), ExerciseFollowups.accepted(card.advice, JSONObject(card.contextJson)).toJson().toString(),
         ))
     }
 

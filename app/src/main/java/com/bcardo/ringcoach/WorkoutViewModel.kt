@@ -24,6 +24,8 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
         private set
     var histories by mutableStateOf(emptyMap<String, ExerciseHistory>())
         private set
+    var followups by mutableStateOf(emptyMap<String, StoredExerciseNote>())
+        private set
     var historyEpoch by mutableStateOf(0)
         private set
 
@@ -68,9 +70,15 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
                         withContext(Dispatchers.IO) { store.retryFailedWorkouts(); ProgressWorkStore(store.writableDatabase).clearRetries() }
                         ProgressJob.schedule(getApplication(), replaceExisting = true)
                     }
-                    val context = withContext(Dispatchers.IO) { store.readCoachingContext(date, "") }
+                    val result = withContext(Dispatchers.IO) {
+                        val policy = getApplication<Application>().assets.open("coaching-policy.md").bufferedReader().use { it.readText() }
+                        val context = store.readCoachingContext(date, policy)
+                        context to store.exerciseFollowups(context.toJson(), date)
+                    }
+                    val context = result.first
                     baselines = context.exercises
                     records = context.workoutRecords
+                    followups = result.second
                     historyEpoch++
                     histories = emptyMap()
                     statuses = context.workoutStatuses
@@ -79,6 +87,7 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: Exception) {
+                followups = emptyMap()
                 notice = R.string.workout_load_failed
             } finally {
                 syncing = false
