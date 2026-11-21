@@ -96,15 +96,15 @@ internal fun JournalApp(
                     "training" -> {
                         val card = coach.dailyCoaching?.takeIf { it.date == today }?.card
                         Text(today.toString())
-                        Text("训练计划与最新进度", style = MaterialTheme.typography.titleLarge)
-                        WorkoutScreen(workouts, today, readOnly = true)
-                        HorizontalDivider()
                         Text("今日训练建议", style = MaterialTheme.typography.titleLarge)
                         if (card != null) {
                             Text("更新于 ${coachCardTimestamp(card.createdAt)}", style = MaterialTheme.typography.bodySmall)
                             card.advice.training.forEach { Text("• $it") }
                         } else Text("今日暂无训练建议。可在日志中向教练提问。")
                         ProgressStatus(coach, today) { coach.retryProgress(probe) }
+                        HorizontalDivider()
+                        Text("训练计划与最新进度", style = MaterialTheme.typography.titleLarge)
+                        WorkoutScreen(workouts, today, readOnly = true)
                     }
                     "journal" -> {
                         TextButton(onClick = { archiveDate = null; tab = "journal_archive" }) { Text("查看以往日志与建议") }
