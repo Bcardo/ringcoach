@@ -133,7 +133,9 @@ class CoachingWireContextTest {
         assertTrue(partial.sameJson(CoachingWireTestDecoder.expand(partialWire)))
     }
 
-    @Test fun actualSerializerCorpusFitsWithHeadroomAndRetainsEverySample() {
+    @Test fun actualSerializerCorpusRetainsEverySampleWithShortAndProductionPrompts() {
+        val productionPrompt = listOf(java.io.File("prompts/coach-system.txt"), java.io.File("../prompts/coach-system.txt"))
+            .first { it.isFile }.readText(Charsets.UTF_8)
         for (kind in listOf("question", "mixed", "correction", "morning", "retained", "long_plans", "full_history")) {
             val source = context(kind, sessions = if (kind == "question") 0 else 6, samples = if (kind == "question") 0 else 1200)
             if (kind == "correction") {
@@ -161,8 +163,10 @@ class CoachingWireContextTest {
                 for (i in 0 until days.length()) for (metric in listOf("energy_score", "sleeping_hrv"))
                     days.getJSONObject(i).getJSONObject(metric).put("status", "available").put("value", 40 + i).put("source", "synthetic_source")
             }
-            val packed = CoachingRequestPackager.prepare(source, "Use only source-backed facts.")
-            assertTrue("Corpus needs headroom: $kind", packed.size.requestBytes < 112 * 1024)
+            for ((promptKind, prompt) in listOf("short" to "Use only source-backed facts.", "production" to productionPrompt)) {
+            val packed = CoachingRequestPackager.prepare(source, prompt)
+            if (promptKind == "short") assertTrue("Short-prompt corpus needs headroom: $kind", packed.size.requestBytes < 112 * 1024)
+            else assertTrue("Production-prompt corpus exceeds hard cap: $kind", packed.size.requestBytes <= 128 * 1024)
             assertTrue(packed.size.encoded)
             assertTrue(packed.size.requestBytes < packed.size.unpackedBytes)
             val facts = JSONObject(packed.request.getJSONArray("messages").getJSONObject(1).getString("content"))
@@ -172,7 +176,9 @@ class CoachingWireContextTest {
             assertTrue(source.getJSONObject("telemetry").sameJson(restored.getJSONObject("telemetry")))
             assertTrue(source.getJSONObject("ring_bluetooth").sameJson(restored.getJSONObject("ring_bluetooth")))
             assertEquals(packed.size.requestBytes, packed.request.toString().toByteArray(Charsets.UTF_8).size)
-            println("CONTEXT_BENCHMARK case=$kind unpacked_bytes=${packed.size.unpackedBytes} packed_bytes=${packed.size.requestBytes} target_bytes=${packed.size.targetBytes}")
+            val label = if (promptKind == "short") "CONTEXT_BENCHMARK" else "PRODUCTION_PROMPT_BENCHMARK"
+            println("$label case=$kind unpacked_bytes=${packed.size.unpackedBytes} packed_bytes=${packed.size.requestBytes} target_bytes=${packed.size.targetBytes}")
+            }
         }
     }
 
