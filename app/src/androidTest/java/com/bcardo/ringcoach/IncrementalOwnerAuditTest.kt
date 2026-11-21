@@ -11,6 +11,22 @@ import org.junit.runner.RunWith
 /** Explicit, read-only verification of the migrated owner's DB; emits counts, never photos or measurements. */
 @RunWith(AndroidJUnit4::class)
 class IncrementalOwnerAuditTest {
+    @Test fun liveDatabaseQuickCheck() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("audit_storage") == "true")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        JournalStore(instrumentation.targetContext).use { store ->
+            val healthy = store.readableDatabase.rawQuery("PRAGMA quick_check", null).use { rows ->
+                var ok = rows.moveToFirst()
+                if (ok) do { ok = ok && rows.getString(0) == "ok" } while (rows.moveToNext())
+                ok
+            }
+            assertTrue("Live database integrity check failed", healthy)
+            instrumentation.sendStatus(0, android.os.Bundle().apply {
+                putString("stream", "LIVE_STORAGE integrity_ok=true raw_diagnostics_logged=false\n")
+            })
+        }
+    }
+
     @Test fun confirmedValuesAndReleasedPhotoCounts() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("audit_incremental") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
