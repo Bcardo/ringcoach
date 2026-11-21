@@ -29,6 +29,7 @@ android {
     }
 
     sourceSets.getByName("main").assets.srcDir(rootProject.file("prompts"))
+    sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("prompts"))
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
