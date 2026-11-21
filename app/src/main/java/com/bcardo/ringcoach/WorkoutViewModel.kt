@@ -22,6 +22,25 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
         private set
     var records by mutableStateOf(emptyList<WorkoutRecord>())
         private set
+    var histories by mutableStateOf(emptyMap<String, ExerciseHistory>())
+        private set
+    var historyEpoch by mutableStateOf(0)
+        private set
+
+    fun loadHistory(exercise: String, date: LocalDate, retry: Boolean = false) {
+        if (!retry && histories.containsKey(exercise)) return
+        val epoch = historyEpoch
+        histories = histories + (exercise to ExerciseHistory())
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { store.workoutHistory(exercise, date) }
+                if (epoch == historyEpoch) histories = histories + (exercise to ExerciseHistory(result, loading = false))
+            } catch (e: CancellationException) { throw e }
+            catch (_: Exception) {
+                if (epoch == historyEpoch) histories = histories + (exercise to ExerciseHistory(loading = false, failed = true))
+            }
+        }
+    }
     var statuses by mutableStateOf(emptyList<JSONObject>())
         private set
     var syncing by mutableStateOf(false)
@@ -52,6 +71,8 @@ internal class WorkoutViewModel(application: Application) : AndroidViewModel(app
                     val context = withContext(Dispatchers.IO) { store.readCoachingContext(date, "") }
                     baselines = context.exercises
                     records = context.workoutRecords
+                    historyEpoch++
+                    histories = emptyMap()
                     statuses = context.workoutStatuses
                     loaded = true
                 } while (requested)

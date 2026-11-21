@@ -9,7 +9,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -67,10 +69,32 @@ internal fun WorkoutScreen(workouts: WorkoutViewModel, today: LocalDate, readOnl
                             latest.first().date.toString()),
                             style = MaterialTheme.typography.labelMedium)
                         for (record in latest) Text(record.observation.performance)
+                        baseline?.let {
+                            Text("已保存参考 · ${it.snapshotDate}", style = MaterialTheme.typography.labelMedium)
+                            Text(it.referenceNotes.replace("**", ""))
+                        }
                     } else if (baseline != null) {
                         Text(stringResource(R.string.workout_reference_date, baseline.snapshotDate.toString()),
                             style = MaterialTheme.typography.labelMedium)
                         Text(baseline.referenceNotes.replace("**", ""))
+                    }
+                    var expanded by rememberSaveable(exercise, today.toString()) { mutableStateOf(false) }
+                    LaunchedEffect(expanded, workouts.historyEpoch) { if (expanded) workouts.loadHistory(exercise, today) }
+                    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起过往表现" else "查看过往表现") }
+                    if (expanded) {
+                        val history = workouts.histories[exercise]
+                        when {
+                            history == null || history.loading -> Text("正在读取过往表现…")
+                            history.failed -> TextButton(onClick = { workouts.loadHistory(exercise, today, retry = true) }) { Text("重试读取过往表现") }
+                            else -> {
+                                val previous = history.records.filter { it.date != latest?.firstOrNull()?.date }
+                                if (previous.isEmpty()) Text("暂无更早的同动作表现。")
+                                previous.groupBy { it.date }.forEach { (date, records) ->
+                                    Text(date.toString(), style = MaterialTheme.typography.labelMedium)
+                                    records.forEach { Text((if (it.observation.status == "partial") "部分完成 · " else "") + it.observation.performance) }
+                                }
+                            }
+                        }
                     }
                 }
             }

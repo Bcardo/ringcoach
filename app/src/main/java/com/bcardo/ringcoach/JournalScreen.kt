@@ -23,22 +23,27 @@ internal fun JournalApp(
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var diagnostics by rememberSaveable { mutableStateOf(false) }
     var lastToday by rememberSaveable { mutableStateOf(today.toString()) }
+    var archiveDate by rememberSaveable { mutableStateOf<String?>(null) }
+    var journalDateInput by rememberSaveable { mutableStateOf(journal.draft.date.toString()) }
+    LaunchedEffect(journal.draft.date) { journalDateInput = journal.draft.date.toString() }
+    val destination = restoredDestination(tab)
+    LaunchedEffect(tab) { if (tab != destination) tab = destination }
     val enabled = !journal.loading && !journal.saving && !journal.loadFailed && !photos.working
     val workRevision by ProgressRuntime.revision.collectAsState()
     LaunchedEffect(workRevision, today) {
         coach.reload(today); workouts.sync(today); nutrition.sync(today)
-        if (tab == "history") coachHistory.reload()
+        if (destination == "journal_archive") coachHistory.reload()
     }
     LaunchedEffect(coach.progressStage, coach.pendingProgressDate, coach.foreground) {
         if (coach.progressStage == "waiting_health" && coach.foreground)
             coach.captureProgressHealth(probe, coach.pendingProgressDate?.let(LocalDate::parse) ?: today)
     }
-    LaunchedEffect(tab, today) {
+    LaunchedEffect(destination, today) {
         workouts.sync(today); nutrition.sync(today)
-        if (tab == "history") coachHistory.reload()
+        if (destination == "journal_archive") coachHistory.reload()
     }
-    LaunchedEffect(tab, today, coach.nightlySnapshot) {
-        if (tab == "history") coachHistory.loadRecovery(today)
+    LaunchedEffect(destination, today, coach.nightlySnapshot) {
+        if (destination == "recovery") coachHistory.loadRecovery(today)
     }
     LaunchedEffect(today, journal.loading) {
         if (!journal.loading && lastToday != today.toString()) {
@@ -46,25 +51,27 @@ internal fun JournalApp(
             lastToday = today.toString()
         }
     }
-    BackHandler(enabled = settingsOpen || tab != "home") {
-        if (diagnostics) diagnostics = false else if (settingsOpen) settingsOpen = false else tab = "home"
+    BackHandler(enabled = settingsOpen || destination != "home") {
+        if (diagnostics) diagnostics = false else if (settingsOpen) settingsOpen = false
+        else { coachHistory.closeDetail(); tab = parentDestination(destination) }
     }
     MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
         Scaffold(bottomBar = {
             NavigationBar {
-                for ((destination, title) in listOf("home" to "今日", "training" to "训练", "journal" to "日志", "history" to "历史")) {
-                    NavigationBarItem(selected = tab == destination, onClick = {
-                        tab = destination; settingsOpen = false; diagnostics = false
+                for ((target, title) in PRIMARY_DESTINATIONS) {
+                    NavigationBarItem(selected = primaryDestination(destination) == target, onClick = {
+                        coachHistory.closeDetail()
+                        tab = target; settingsOpen = false; diagnostics = false
                     }, icon = { Text(title) })
                 }
             }
         }) { padding ->
-            val scroll = key(tab, settingsOpen, diagnostics) { rememberScrollState() }
+            val scroll = key(destination, settingsOpen, diagnostics) { rememberScrollState() }
             Column(Modifier.fillMaxSize().padding(padding).verticalScroll(scroll).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(if (settingsOpen) { if (diagnostics) "健康连接与诊断" else "设置" }
-                        else when (tab) { "training" -> "训练"; "journal" -> "日志"; "history" -> "历史"; else -> "今日" },
+                        else when (destination) { "training" -> "训练"; "journal" -> "日志"; "journal_archive" -> "以往记录"; "recovery" -> "恢复详情"; else -> "今日" },
                         style = MaterialTheme.typography.headlineLarge)
                     TextButton(onClick = { if (settingsOpen) { if (diagnostics) diagnostics = false else settingsOpen = false }
                         else settingsOpen = true }) { Text(if (settingsOpen) "返回" else "设置") }
@@ -74,7 +81,7 @@ internal fun JournalApp(
                         SettingsEditor(settings, coach, today)
                         TextButton(onClick = { diagnostics = true }) { Text("Health Connect · 连接与诊断") }
                     }
-                } else when (tab) {
+                } else when (destination) {
                     "home" -> {
                         Text(today.toString())
                         val feedback = coach.dailyCoaching?.takeIf { it.date == today }
@@ -82,6 +89,7 @@ internal fun JournalApp(
                         DailyDecisionPanel(today, feedback) { tab = "training" }
                         ProgressStatus(coach, today) { coach.retryProgress(probe) }
                         DailyNightPanel(today, coach.foreground)
+                        TextButton(onClick = { tab = "recovery" }) { Text("查看恢复趋势") }
                         DailyIntakeCard(nutrition.days.firstOrNull { it.date == today }, nutrition.syncing,
                             card)
                     }
@@ -99,8 +107,9 @@ internal fun JournalApp(
                         ProgressStatus(coach, today) { coach.retryProgress(probe) }
                     }
                     "journal" -> {
+                        TextButton(onClick = { archiveDate = null; tab = "journal_archive" }) { Text("查看以往日志与建议") }
                         JournalLoadState(journal)
-                        ProgressComposer(journal, photos, enabled, today) {
+                        ProgressComposer(journal, photos, enabled, today, journalDateInput, { journalDateInput = it }) {
                             photos.submitProgress(journal.submissionId, journal.draft, { entry ->
                                 journal.acceptSaved(entry); coach.queueProgress(); coach.refreshNightly(); coach.captureProgressHealth(probe, entry.draft.date)
                             }) {
@@ -109,9 +118,19 @@ internal fun JournalApp(
                         }
                         ProgressStatus(coach, today) { coach.retryProgress(probe) }
                     }
-                    "history" -> {
+                    "journal_archive" -> {
+                        TextButton(onClick = { coachHistory.closeDetail(); tab = "journal" }) { Text("返回日志") }
+                        ProgressHistory(journal, nutrition, coachHistory, archiveDate?.let(LocalDate::parse)) { date ->
+                            archiveDate = date.toString(); coachHistory.selectRecoveryDate(date)
+                        }
+                    }
+                    "recovery" -> {
+                        TextButton(onClick = { tab = "home" }) { Text("返回今日") }
                         RecoveryHistoryPanel(coachHistory, today)
-                        ProgressHistory(journal, nutrition, coachHistory)
+                        TextButton(onClick = {
+                            val date = coachHistory.recoveryDate ?: today
+                            archiveDate = date.toString(); coachHistory.selectRecoveryDate(date); tab = "journal_archive"
+                        }) { Text("查看当天日志与建议") }
                     }
                 }
             }
@@ -129,12 +148,11 @@ private fun JournalLoadState(journal: JournalViewModel) {
 }
 
 @Composable
-private fun ProgressComposer(journal: JournalViewModel, photos: PhotoMealViewModel, enabled: Boolean, today: LocalDate, onSubmit: () -> Unit) {
-    var dateInput by rememberSaveable { mutableStateOf(journal.draft.date.toString()) }
-    LaunchedEffect(journal.draft.date) { dateInput = journal.draft.date.toString() }
+private fun ProgressComposer(journal: JournalViewModel, photos: PhotoMealViewModel, enabled: Boolean, today: LocalDate,
+    dateInput: String, onDateInput: (String) -> Unit, onSubmit: () -> Unit) {
     val parsedDate = runCatching { LocalDate.parse(dateInput) }.getOrNull()?.takeIf { !it.isAfter(today) }
     OutlinedTextField(value = dateInput, onValueChange = {
-        dateInput = it
+        onDateInput(it)
         runCatching { LocalDate.parse(it) }.getOrNull()?.takeIf { date -> !date.isAfter(today) }?.let { date ->
             journal.updateDraft(journal.draft.copy(date = date))
         }
@@ -150,21 +168,21 @@ private fun ProgressComposer(journal: JournalViewModel, photos: PhotoMealViewMod
 }
 
 @Composable
-private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewModel, history: CoachHistoryViewModel) {
+private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewModel, history: CoachHistoryViewModel,
+    selectedDate: LocalDate?, onSelectDate: (LocalDate) -> Unit) {
     Text("日志与教练建议", style = MaterialTheme.typography.titleLarge)
     JournalLoadState(journal)
     if (history.loading) Text("正在读取历史…")
     if (history.loadFailed) OutlinedButton(onClick = history::retry) { Text("重试读取历史") }
     val savedDates = (journal.entries.map { it.draft.date } + history.cards.map { it.date } + nutrition.days.filter { it.status != "missing" }.map { it.date })
         .distinct().sortedDescending()
-    val selectedDate = history.recoveryDate.takeIf { history.recovery != null }
     val dates = (listOfNotNull(selectedDate) + savedDates).distinct()
     if (dates.isEmpty()) Text("提交第一条进度后，会在这里按日期保留记录和建议。")
     for (date in dates) {
         var expanded by rememberSaveable(date.toString(), selectedDate) { mutableStateOf(date == selectedDate) }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { expanded = !expanded }) { Text("$date · ${if (expanded) "收起" else "查看当天记录"}") }
+                TextButton(onClick = { expanded = !expanded; if (expanded) onSelectDate(date) }) { Text("$date · ${if (expanded) "收起" else "查看当天记录"}") }
                 nutrition.days.firstOrNull { it.date == date }?.result?.let {
                     Text("已记录摄入：${nutritionNumber(it.values["intake_kcal"]?.value)} kcal · 蛋白质 ${nutritionNumber(it.values["protein_grams"]?.value)} g")
                 }
