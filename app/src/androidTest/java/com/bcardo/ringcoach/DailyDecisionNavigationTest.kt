@@ -24,7 +24,12 @@ class DailyDecisionNavigationTest {
         val wasKeptOn = activity.window.attributes.flags and keepOn != 0
         instrumentation.runOnMainSync { activity.window.addFlags(keepOn) }
         try {
-        assertFalse("Unlock the device before this read-only navigation check", context.getSystemService(android.app.KeyguardManager::class.java).isDeviceLocked)
+        val keyguard = context.getSystemService(android.app.KeyguardManager::class.java)
+        if (InstrumentationRegistry.getArguments().getString("await_owner_unlock") == "true") {
+            val unlockDeadline = android.os.SystemClock.elapsedRealtime() + 90_000
+            while (keyguard.isDeviceLocked && android.os.SystemClock.elapsedRealtime() < unlockDeadline) Thread.sleep(250)
+        }
+        assertFalse("Unlock the device before this read-only navigation check", keyguard.isDeviceLocked)
         instrumentation.waitForIdleSync()
         Thread.sleep(500)
         fun nodes(): List<AccessibilityNodeInfo> {

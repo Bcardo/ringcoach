@@ -2,6 +2,8 @@
 
 Installed first milestone on 2026-11-20; broader ordinary-use acceptance remains open. Parent roadmap: #58. This adapts Oura's contextual Today pattern into the existing four-tab app. The panel APK replaces the original #65 build with identical coaching requests/prompt/policy; record the UI version boundary when reviewing normal-use evidence.
 
+Subsequent approved navigation delivery: [three tabs and contextual history](contextual-history.md) is now installed. Its current layout supersedes the first milestone's four-tab placement while preserving these cards and the same coaching policy.
+
 ## Today
 
 The first card presents the first saved current-date coaching note as the focus, the next at most two notes as supporting reasons, and the first training suggestion as the proposed next step. These are attributed model suggestions, not newly verified measurements or a new deterministic readiness assessment. No additional model request, classifier, prompt/schema change, persisted summary, plan edit, or recognition replay is introduced. Longer text is visually limited with ellipses in the compact view; expandable notes and training suggestions retain all original text. Dietary advice remains in the existing intake card.
