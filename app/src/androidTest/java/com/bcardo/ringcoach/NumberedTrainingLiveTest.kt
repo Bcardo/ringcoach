@@ -54,5 +54,10 @@ class NumberedTrainingLiveTest {
         val text = advice.training.joinToString(" ")
         assertTrue("Today's selected activity must be addressed", Regex("游泳|休息").containsMatchIn(text))
         assertFalse("Do not prescribe synthetic leg load for today", text.contains("42"))
+        data.remove("progress_submission")
+        data.put("coaching_trigger", "new_ring_sleep_transfer")
+        val morning = QwenClient.response(QwenClient.post(QwenClient.request(data, prompt, true), key))
+        assertTrue("Morning must address today's recovery options before next-time progression",
+            Regex("游泳|休息").containsMatchIn(morning.training.first()))
     }
 }
