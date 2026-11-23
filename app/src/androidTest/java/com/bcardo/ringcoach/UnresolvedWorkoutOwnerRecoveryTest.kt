@@ -10,10 +10,42 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.LocalDate
+import java.time.Instant
+import java.util.UUID
 
 /** Explicit repair only: a single empty, unresolved, completed turn, with original input/provenance. */
 @RunWith(AndroidJUnit4::class)
 class UnresolvedWorkoutOwnerRecoveryTest {
+    @Test fun refreshWithExplicitTodaySelection() = runBlocking {
+        val args = InstrumentationRegistry.getArguments()
+        assumeTrue(args.getString("recover_today_selection") == "swim_rest")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val date = LocalDate.now()
+        ProgressRuntime.mutex.withLock {
+            JournalStore(context).use { store ->
+                val previous = requireNotNull(store.latestCoachCard(date))
+                val data = JSONObject(previous.contextJson)
+                val policy = context.assets.open("coaching-policy.md").bufferedReader().use { it.readText() }
+                val fresh = store.readyCoachingContext(date, policy).toJson()
+                for (key in fresh.keys()) data.put(key, fresh.get(key))
+                data.remove("previous_advice")
+                data.remove("request_manifest")
+                data.put("request_at", Instant.now().toString())
+                    .put("coaching_trigger", "owner_requested_training_correction")
+                    .put("current_user_request", "今天选择游泳或休息，请先说明今天的安排。这是当天选择，不是已完成训练，不要继续安排昨日腿部训练。")
+                    .put("telemetry_status", "retained_capture")
+                data.optJSONObject("telemetry")?.put("capture_mode", "retained_statistics")
+                val prompt = context.assets.open("coach-system.txt").bufferedReader().use { it.readText() }
+                val packaged = CoachingRequestPackager.prepare(data, prompt, onSize = { CoachingRequestSizeStore.record(context, it) })
+                val advice = QwenClient.response(QwenClient.post(packaged.request, requireNotNull(QwenCredentials(context).read())))
+                check(Regex("游泳|休息").containsMatchIn(advice.training.first())) { "Today's selection not addressed; no card saved" }
+                store.saveCoachCard(SavedCoachCard(UUID.randomUUID().toString(), date, Instant.now(), QWEN_MODEL,
+                    COACH_PROMPT_VERSION, packaged.retainedContext.toString(), advice))
+                ProgressRuntime.changed()
+            }
+        }
+    }
+
     @Test fun recoverOriginalUnresolvedReport() = runBlocking {
         val args = InstrumentationRegistry.getArguments()
         assumeTrue(args.getString("recover_unresolved_workout") == "true")
