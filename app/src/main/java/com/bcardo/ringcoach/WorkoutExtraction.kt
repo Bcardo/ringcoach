@@ -16,11 +16,16 @@ internal const val WORKOUT_EXTRACTOR_VERSION = "workout-v2-validation-repair"
 internal class WorkoutValidationException(val code: String) : IllegalArgumentException(code)
 internal data class PendingWorkout(val date: LocalDate, val revision: String, val training: String, val status: String = "pending",
     val confirmedRecords: List<WorkoutObservation> = emptyList())
-internal data class WorkoutRecord(val date: LocalDate, val observation: WorkoutObservation) {
+internal data class WorkoutRecord(val date: LocalDate, val observation: WorkoutObservation,
+    val sourceSubmissionIds: List<String> = emptyList(), val updateEvidence: String? = null) {
     fun toJson(): JSONObject = JSONObject()
         .put("date", date.toString()).put("exercise", observation.exercise)
         .put("performance", observation.performance).put("evidence", observation.evidence)
         .put("status", observation.status).put("source", "saved_training_input")
+        .apply {
+            if (sourceSubmissionIds.isNotEmpty()) put("source_submission_ids", JSONArray(sourceSubmissionIds))
+            updateEvidence?.let { put("update_evidence", it) }
+        }
 }
 
 internal object WorkoutExtractor {

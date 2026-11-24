@@ -1,6 +1,6 @@
 # Direct Ring sleep collection
 
-RingCoach can keep a passive Bluetooth connection to the already bonded Galaxy Ring and receive its health transfers alongside Samsung's official companion. This integration is experimental: the research capture demonstrated overnight reception, but production multi-night reliability and same-night HRV reference validation are still pending.
+RingCoach can keep a passive Bluetooth connection to the already bonded Galaxy Ring and receive its health transfers alongside Samsung's official companion. Live production reception has been observed on four distinct new wake dates. A missing night, reconnect behavior and same-night HRV reference validation remain unresolved; uninterrupted reliability and numerical accuracy are not accepted.
 
 ## Enable and use
 
@@ -39,6 +39,6 @@ Run disposable on-phone storage/coaching tests with `scripts/run_android_checks.
 
 `RingBluetoothOwnerSetupTest` is excluded from routine operation unless `ring_owner_setup=true` and an action-specific flag are supplied. It can verify/import an owner-preserved private capture, request collection permissions through Android dialogs, or explicitly queue review of an imported sleep. It requests `FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES` for UI automation. Never include personal captures in test assets or commits. Passing a replay test is not overnight acceptance.
 
-Verify distinct new wake dates under ordinary use before accepting nightly reliability. After APK replacement, check Samsung reader configuration, binding and a fresh successful capture independently; a bound service alone does not prove fresh screen data.
+Verify distinct new wake dates under ordinary use before accepting nightly reliability. After APK replacement, preserve the inactive legacy accessibility component configuration/binding. Screen navigation is retired; verify fresh Bluetooth reception, dated coverage and coaching inclusion separately.
 
 Android references: [background BLE communication](https://developer.android.com/develop/connectivity/bluetooth/ble/background), [foreground service types](https://developer.android.com/develop/background-work/services/fgs/service-types#connected-device), [Bluetooth GATT](https://developer.android.com/reference/android/bluetooth/BluetoothGatt), [GATT busy status](https://developer.android.com/reference/android/bluetooth/BluetoothStatusCodes#ERROR_GATT_WRITE_REQUEST_BUSY).

@@ -23,7 +23,7 @@ class SupplementFeedbackLiveTest {
             val key = QwenCredentials(context).read() ?: error("Saved key required")
             val prompt = context.assets.open("nutrition-extraction.txt").bufferedReader().use { it.readText() }
             val coachPrompt = context.assets.open("coach-system.txt").bufferedReader().use { it.readText() }
-            val workoutPrompt = context.assets.open("workout-extraction.txt").bufferedReader().use { it.readText() }
+            val workoutPrompt = context.assets.open("workout-delta.txt").bufferedReader().use { it.readText() }
             val date = LocalDate.of(2026, 10, 2)
             store.saveSettings(CoachingSettings("休息日，无训练安排", "休息日摄入以记录为准。补剂尚无固定计划。", "只依据给定事实"))
             fun turn(id: String, text: String): NutritionExtraction {
@@ -44,12 +44,11 @@ class SupplementFeedbackLiveTest {
                 InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
                     putString("stream", "Synthetic turn $id: events=${result.supplements.map { it.name + ":" + it.status }} foods=${result.foodItems.size}\n")
                 })
-                val workout = store.nextPendingWorkout()!!
-                val workoutResult = if (id == "protein") WorkoutExtractor.decode(QwenClient.responseText(QwenClient.post(
-                    WorkoutExtractor.request(workout, emptyList(), workoutPrompt), key)), workout.training, emptySet())
-                    else WorkoutExtraction(emptyList(), emptyList())
-                if (id == "protein") assertTrue(workoutResult.records.any { it.status == "completed" && it.exercise.contains("深蹲") })
-                store.applyWorkoutExtraction(workout, workoutResult)
+                val turns = IncrementalWorkoutStore(store.writableDatabase)
+                val workout = turns.next()!!
+                val workoutResult = if (id == "protein") WorkoutDeltaExtractor.extract(workout, emptyList(), workoutPrompt, key) else workout.previous
+                if (id == "protein") assertTrue(workoutResult.records.any { it.observation.status == "completed" && it.observation.exercise.contains("深蹲") })
+                turns.apply(workout, workoutResult)
                 assertEquals(id, store.nextPendingCoaching()!!.id)
                 return result
             }

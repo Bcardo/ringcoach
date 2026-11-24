@@ -20,7 +20,8 @@ internal class ProgressWorkStore(private val db: SQLiteDatabase) {
 
     fun hasWork(): Boolean = db.rawQuery("""SELECT 1 FROM progress_coaching q LEFT JOIN coach_cards c ON c.id=q.submission_id WHERE c.id IS NULL
         UNION ALL SELECT 1 FROM nutrition_extractions WHERE status='pending'
-        UNION ALL SELECT 1 FROM workout_extractions WHERE status='pending' LIMIT 1""", null).use { it.moveToFirst() }
+        UNION ALL SELECT 1 FROM workout_extractions WHERE status='pending'
+        UNION ALL SELECT 1 FROM workout_turns WHERE status='pending' LIMIT 1""", null).use { it.moveToFirst() }
 
     fun stage(stage: String, date: LocalDate? = null, id: String? = null, error: String? = null) {
         db.execSQL("INSERT OR REPLACE INTO progress_work_state VALUES (1,?,?,?,?,?)",
@@ -75,7 +76,10 @@ internal class ProgressWorkStore(private val db: SQLiteDatabase) {
                 db.execSQL("UPDATE nutrition_turns SET status='pending' WHERE submission_id=? AND status='failed'", arrayOf(revision))
                 db.execSQL("UPDATE nutrition_extractions SET status='pending' WHERE source_revision=? AND status='failed'", arrayOf(revision))
             }
-            if (key.startsWith("workout:")) db.execSQL("UPDATE workout_extractions SET status='pending' WHERE source_revision=? AND status='failed'", arrayOf(revision))
+            if (key.startsWith("workout:")) {
+                db.execSQL("UPDATE workout_extractions SET status='pending' WHERE source_revision=? AND status='failed'", arrayOf(revision))
+                db.execSQL("UPDATE workout_turns SET status='pending' WHERE submission_id=? AND status='failed'", arrayOf(revision))
+            }
         }
     }
 }

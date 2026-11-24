@@ -1,29 +1,25 @@
 # Recovery collection reliability (#28)
 
-The HRV path has three separate states: the owner has enabled the accessibility service, Android has bound it, and a date-verified Samsung Health capture has succeeded. A current Energy Score from the SDK proves none of these HRV states.
+## Screen-free collection
 
-## Fixes
+Screen navigation is retired. All coaching uses available Bluetooth session statistics, SDK/Health Connect context and retained history without opening Samsung Health. The old accessibility component is inactive and remains only to preserve the owner's existing configuration/binding. Its configured/bound status proves no new sensor reception or successful capture.
 
-Samsung can resume a different detail page or a scrolled home dashboard when the Energy Score action is launched. Body composition shares Today/date controls with Energy Score. Date controls alone must never identify the metric screen. The reader recognizes the Energy Score container, backs out of the known body-composition page, brings the dashboard's Energy Score card into view, and selects only one visible pager page. Offscreen pages and transition ties cannot be assigned to a wake date.
+The collector's opt-in setting, foreground process, fresh heartbeat, connected/subscribed state, last packet, decoded transfer, dated archive coverage and successful coaching inclusion are separate evidence. None alone proves the others. Reconnection gaps and unknown/missing dates stay explicit. Same-night reference comparison is required before quantitative Bluetooth HRV validation; window counts are not independent beat counts or Samsung daily sleeping HRV.
 
-When the service binds after Activity startup, a foreground observer requests the missed capture. A successful target-day capture is cached even if historical backfill later fails. Automatic retries have a short cooldown; explicit Settings refresh bypasses the success cache. Coaching may await an already active capture, but the background job never starts Samsung UI.
+## Current evidence and open work
 
-Capture completion returns to RingCoach only while Samsung Health is still the active app. A timeout or interruption must not pull the owner back over another app they chose to use.
+The November 20 audit found fresh live-origin sleep/HRV on four distinct new wake dates with reception on each wake date and corresponding completed morning jobs. One intervening date lacks a live sleep record, and the collector was reconnecting when checked. The cause of that gap and uninterrupted delivery are unverified. Imported November 14 research data is separate and does not add acceptance nights. No forced scheduler run or synthetic replay adds ordinary-use evidence.
 
-`recovery-reliability` preferences keep at most 64 lifecycle/capture observations and 30 days of collection/coaching-presence metadata. They record enablement, connection, boot count, APK update time, capture phase, limited view identifiers/bounds and date-specific presence flags. They contain no UI text, readings, HR samples, photos, credentials or coach prose. These records show when a state was observed, not the exact time or cause of an unobserved disablement.
+The Bluetooth retrieval investigation #9 is complete. Its outstanding numerical-reference criterion is transferred to #64 for matching timestamped windows/units to a private same-night reference; #28 retains gap recovery, idle/reboot coverage and source/coaching inclusion. Keep #64 and #28 open while those acceptance items are unverified. Closing the retrieval milestone does not establish numerical accuracy or uninterrupted reliability. The 14-day comparison pilot (#50) has not started.
 
-## Testing without disabling the reader
+## Physical checks
 
-The default Android instrumentation launch force-stops its target; Android's accessibility manager removes enabled services on a force-stop. UiAutomation also suppresses other accessibility services unless configured otherwise. These are plausible development-related causes, not proof of the owner's original disablement.
+Use `scripts/run_android_checks.ps1`: it warms the app, uses `am instrument --no-restart`, verifies test success and checks accessibility configuration before/after. Never fall back to the force-stopping runner. UiAutomation requires `FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES`. Recheck configured/bound legacy service independently after APK replacement; do not attempt a fresh screen capture or silently toggle it.
 
-Use `scripts/run_android_checks.ps1` for routine isolated tests. It opens the app, requires a running process, uses `--no-restart`, verifies test success and checks enablement before/after. Never fall back to the default runner. Tests using UiAutomation set `FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES`. Install test artifacts before warming the target process. Recheck service binding after replacement; an enabled-but-stuck binding is not a successful capture.
+`ScreenFreeRecoveryOwnerTest` verifies preparation and foreground refresh stay outside Samsung Health beyond the former retry cooldown, without sending a model request or editing Journal facts. Disposable storage/request regressions verify retained vendor history, separate Bluetooth evidence and missing values.
 
-References: [instrumentation startup](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/am/ActivityManagerService.java), [force-stop accessibility handling](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/accessibility/java/com/android/server/accessibility/AccessibilityManagerService.java#938), [UiAutomation flags](https://developer.android.com/reference/android/app/UiAutomation#FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES).
+Existing bounded `recovery-reliability` preferences retain lifecycle and coaching-presence metadata only. New capture observations are no longer produced. Operational logs and public tracking exclude readings, UI text, sample arrays, model responses, photos, credentials and identifiers.
 
-## Three-night acceptance
+## Acceptance
 
-The recovery capture/repair session is a baseline check. It is not three-night acceptance. Begin assessment with the next fresh wake date after deployment, using the owner's normal submissions without another logging workflow.
-
-For three consecutive new wake dates, compare the date-verified Samsung HRV and SDK Energy Score with the retained record and the next successful coaching input. Record first-observed/last-verified time, metric/source gaps, capture failures, any manual intervention and successful response persistence. Historical backfill and repeated same-day requests do not add nights. An intervention must be reported rather than counted as unattended success.
-
-Collect ordinary idle/battery behavior before claiming background timing reliability. A real reboot and deliberate force-stop are separate scenarios; they are not inferred from an app update or Activity reopen. Keep #28 open until its remaining acceptance evidence exists. The separate 14-day comparison pilot (#50) has not started.
+Record distinct new wake dates under normal use, freshness, gaps, relevant collector state, ordinary idle/battery behavior, any intervention and successful inclusion in subsequent coaching. Verify the installed screen-free update does not navigate Samsung Health. A real reboot is a separate scenario; no force-stop test is authorized on the owner's package. Repeated same-day captures, historical backfill, synthetic tests and manual retry do not replace ordinary-use acceptance.

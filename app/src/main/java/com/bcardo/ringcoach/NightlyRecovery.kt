@@ -68,18 +68,6 @@ internal class NightlyRecoveryStore(context: Context, name: String = "nightly-re
         } finally { db.endTransaction() }
     }
 
-    @Synchronized fun replaceScreenDay(date: LocalDate, records: List<NightlyMetric>, now: Instant = Instant.now()) {
-        require(records.all { it.date == date && it.source == "samsung_health_screen" })
-        val db = writableDatabase
-        db.beginTransaction()
-        try {
-            DAILY_RECOVERY_METRICS.forEach { metric ->
-                DailyRecoveryArchive(db).reconcile("samsung_health_screen", metric, date, date, records.filter { it.metric == metric }, now)
-            }
-            db.setTransactionSuccessful()
-        } finally { db.endTransaction() }
-    }
-
     @Synchronized fun status(source: String, status: String) {
         writableDatabase.insertWithOnConflict("sync_state", null, ContentValues().apply {
             put("source", source); put("status", status); put("checked_at", Instant.now().toString())
@@ -90,11 +78,11 @@ internal class NightlyRecoveryStore(context: Context, name: String = "nightly-re
         val start = date.minusDays(6)
         val records = DailyRecoveryArchive(readableDatabase).records(start, date)
         val states = readableDatabase.rawQuery("SELECT source, status, checked_at FROM sync_state", null).use { c ->
-            buildList { while (c.moveToNext()) add(JSONObject().put("source", c.getString(0)).put("status", c.getString(1)).put("checked_at", c.getString(2))) }
+            buildList { while (c.moveToNext()) add(JSONObject().put("source", c.getString(0)).put("status", if (c.getString(0) == "samsung_health_screen") "retained_history_only" else c.getString(1)).put("checked_at", c.getString(2))) }
         }
         return JSONObject().put("history_start", start.toString()).put("history_end", date.toString())
             .put("records", JSONArray(records)).put("sync", JSONArray(states))
-            .put("sleeping_hrv_sdk_support", "not_exposed")
+            .put("sleeping_hrv_sdk_support", "not_exposed").put("screen_capture_mode", "retired")
             .put("interpretation", "Vendor sleeping HRV is a separate daily summary; do not substitute a mean of raw RMSSD windows or compute an HRV z-score from it.")
     }
 

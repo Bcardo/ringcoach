@@ -91,9 +91,7 @@ class StandingBreakfastOwnerSetupTest {
                 .put("request_timezone", ZoneId.systemDefault().id).put("request_at", Instant.now().toString())
                 .put("coaching_trigger", "user_standing_breakfast_update").put("telemetry_status", "unavailable")
             RingBluetoothStore(context).use { data.put("ring_bluetooth", it.snapshot(date)) }
-            data.put("nightly_recovery", SamsungNightlyReader.refresh(context, date)
-                .put("screen_reader_configured", SamsungHealthScreenReader.configured(context))
-                .put("screen_reader_connected", SamsungHealthScreenReader.enabled))
+            data.put("nightly_recovery", SamsungNightlyReader.refresh(context, date))
             NightlyRecoveryStore(context).use { history -> data.put("recovery_history", CoachingRecoveryHistory.compact(history.history(date.minusDays(30), date.minusDays(1)), date)) }
             store.latestCoachCard(date)?.let { data.put("previous_advice", it.advice.toJson()) }
             val prompt = context.assets.open("coach-system.txt").bufferedReader(Charsets.UTF_8).use { it.readText() }
