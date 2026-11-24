@@ -6,18 +6,20 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 internal const val QWEN_MODEL = "qwen3.8-flash"
-internal const val COACH_PROMPT_VERSION = "coach-v17-training-feedback"
+internal const val COACH_PROMPT_VERSION = "coach-v18-exercise-followups"
 
-internal data class CoachAdvice(val training: List<String>, val diet: List<String>, val notes: List<String>) {
+internal data class CoachAdvice(val training: List<String>, val diet: List<String>, val notes: List<String>, val exerciseNotes: List<ExerciseNote> = emptyList()) {
     fun toJson(): JSONObject = JSONObject()
         .put("training", JSONArray(training))
         .put("diet", JSONArray(diet))
         .put("notes", JSONArray(notes))
+        .apply { if (exerciseNotes.isNotEmpty()) put("exercise_notes", JSONArray(exerciseNotes.map { it.toJson() })) }
 
     companion object {
         fun decode(content: String): CoachAdvice {
             val json = JSONObject(content)
-            require(json.keys().asSequence().toSet() == setOf("training", "diet", "notes"))
+            val keys = json.keys().asSequence().toSet()
+            require(keys.containsAll(setOf("training", "diet", "notes")) && keys.all { it in setOf("training", "diet", "notes", "exercise_notes") })
             fun section(key: String): List<String> {
                 val values = json.getJSONArray(key)
                 require(values.length() in 1..4)
@@ -27,7 +29,7 @@ internal data class CoachAdvice(val training: List<String>, val diet: List<Strin
                     value.trim()
                 }
             }
-            return CoachAdvice(section("training"), section("diet"), section("notes"))
+            return CoachAdvice(section("training"), section("diet"), section("notes"), ExerciseNote.decode(json.opt("exercise_notes")))
         }
     }
 }
@@ -47,9 +49,10 @@ internal object QwenClient {
     fun request(context: JSONObject, systemPrompt: String, compact: Boolean): JSONObject {
         if (context.optString("context_encoding") == CoachingWireContext.VERSION)
             return buildRequest(context, systemPrompt + "\n" + CoachingWireContext.INSTRUCTIONS)
-        val plain = buildRequest(context, systemPrompt)
+        val annotated = ExerciseFollowups.decorate(context)
+        val plain = buildRequest(annotated, systemPrompt)
         if (!compact) return plain
-        val encoded = buildRequest(CoachingWireContext.encode(context), systemPrompt + "\n" + CoachingWireContext.INSTRUCTIONS)
+        val encoded = buildRequest(CoachingWireContext.encode(annotated), systemPrompt + "\n" + CoachingWireContext.INSTRUCTIONS)
         // Tiny/unusual inputs keep the ordinary schema when encoding instructions would cost more.
         return if (encoded.toString().toByteArray(Charsets.UTF_8).size < plain.toString().toByteArray(Charsets.UTF_8).size) encoded else plain
     }
@@ -61,8 +64,19 @@ internal object QwenClient {
                 .put("type", "array").put("items", JSONObject().put("type", "string"))
                 .put("minItems", 1).put("maxItems", 4))
         }
+        val required = JSONArray(listOf("training", "diet", "notes"))
+        val baselines = context.optJSONArray("exercise_baselines") ?: JSONArray()
+        val refs = (0 until baselines.length()).mapNotNull { baselines.optJSONObject(it)?.optString("followup_ref")?.takeIf { ref -> ref.matches(Regex("e[1-9][0-9]{0,3}")) } }.distinct()
+        if (refs.isNotEmpty()) {
+            val item = JSONObject().put("type", "object").put("properties", JSONObject()
+                .put("exercise_ref", JSONObject().put("type", "string").put("enum", JSONArray(refs)))
+                .put("text", JSONObject().put("type", "string").put("minLength", 1).put("maxLength", 240)))
+                .put("required", JSONArray(listOf("exercise_ref", "text"))).put("additionalProperties", false)
+            fields.put("exercise_notes", JSONObject().put("type", "array").put("items", item).put("minItems", 0).put("maxItems", 4))
+            required.put("exercise_notes")
+        }
         val schema = JSONObject().put("type", "object").put("properties", fields)
-            .put("required", JSONArray(listOf("training", "diet", "notes"))).put("additionalProperties", false)
+            .put("required", required).put("additionalProperties", false)
         val facts = JSONObject(context.toString())
         val instructions = facts.remove("instructions") as? String ?: ""
         facts.remove("progress_submission_id")

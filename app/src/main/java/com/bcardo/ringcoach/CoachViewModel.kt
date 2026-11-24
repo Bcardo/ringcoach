@@ -372,6 +372,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
             RecoveryReliability.coached(getApplication(), result.date, JSONObject(result.contextJson))
             cardSaved = true
             dailyCoaching = withContext(Dispatchers.IO) { store.dailyCoaching(LocalDate.now()) }
+            ProgressRuntime.changed()
             val completed = JSONObject(result.contextJson).optString("progress_submission_id")
             if (completed.isNotBlank()) refreshPending()
             notice = R.string.coach_card_saved

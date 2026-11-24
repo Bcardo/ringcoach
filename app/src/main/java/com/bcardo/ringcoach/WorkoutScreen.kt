@@ -78,6 +78,10 @@ internal fun WorkoutScreen(workouts: WorkoutViewModel, today: LocalDate, readOnl
                             style = MaterialTheme.typography.labelMedium)
                         Text(baseline.referenceNotes.replace("**", ""))
                     }
+                    workouts.followups[exercise]?.let { note ->
+                        Text("下次同动作 · 建议 ${note.date}", style = MaterialTheme.typography.labelMedium)
+                        Text(note.text)
+                    }
                     var expanded by rememberSaveable(exercise, today.toString()) { mutableStateOf(false) }
                     LaunchedEffect(expanded, workouts.historyEpoch) { if (expanded) workouts.loadHistory(exercise, today) }
                     TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起过往表现" else "查看过往表现") }
