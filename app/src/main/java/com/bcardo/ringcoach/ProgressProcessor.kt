@@ -43,13 +43,17 @@ internal class ProgressProcessor(
             }
             while (true) {
                 currentCoroutineContext().ensureActive()
-                val job = store.nextPendingWorkout() ?: break
+                val job = store.nextPendingWorkout(includeFailed = true) ?: break
                 task = "workout:${job.revision}"; date = job.date
+                if (job.status == "failed") {
+                    work.stage("blocked", date, error = work.error(task) ?: "workout_failed"); return@use false
+                }
                 work.stage("recognizing_workout", date)
                 try {
                     val baselines = store.readCoachingContext(job.date, "").exercises
-                    val response = post(WorkoutExtractor.request(job, baselines, asset("workout-extraction.txt")), key)
-                    val result = WorkoutExtractor.decode(QwenClient.responseText(response), job.training, baselines.map { it.exercise }.toSet())
+                    val result = WorkoutExtractor.extract(job, baselines, asset("workout-extraction.txt"), key, post) { code, attempt, outcome ->
+                        if (database == "ringcoach.db") recordFailure("workout", code, attempt, outcome)
+                    }
                     currentCoroutineContext().ensureActive()
                     store.applyWorkoutExtraction(job, result); work.clearRetry(task); ProgressRuntime.changed()
                 } catch (e: CancellationException) { throw e }
@@ -65,8 +69,12 @@ internal class ProgressProcessor(
                 // Incomplete/failed extraction must never be reported as a successful coach update.
                 val data = try { store.readyCoachingContext(pending.date, asset("coaching-policy.md")).toJson() }
                 catch (_: IllegalArgumentException) { work.stage("blocked", date, pending.id, "extraction_incomplete"); return@use false }
-                val telemetry = if (health != null) health.invoke(pending.date, store)
+                var telemetry = if (health != null) health.invoke(pending.date, store)
                     else ProgressHealth.forJob(context, database, pending.date, store)
+                if (telemetry == null && database == "ringcoach.db") {
+                    val ringAvailable = RingBluetoothStore(context).use { it.snapshot(pending.date).optInt("target_date_session_count") > 0 }
+                    if (ringAvailable) telemetry = JSONObject().put("status", "unavailable").put("capture_mode", "direct_ring_statistics_only")
+                }
                 if (telemetry == null) { work.stage("waiting_health", date, pending.id); return@use false }
                 work.stage("coaching", date, pending.id)
                 data.put("request_timezone", ZoneId.systemDefault().id)
@@ -82,6 +90,7 @@ internal class ProgressProcessor(
                 store.latestCoachCard(pending.date)?.let { data.put("previous_advice", it.advice.toJson()) }
                 // Test databases never read the owner's Samsung data or recovery archive.
                 if (database == "ringcoach.db") {
+                    RingBluetoothStore(context).use { data.put("ring_bluetooth", it.snapshot(pending.date)) }
                     SamsungHealthScreenReader.awaitActiveCapture()
                     data.put("nightly_recovery", SamsungNightlyReader.refresh(context, pending.date)
                         .put("screen_reader_configured", SamsungHealthScreenReader.configured(context))
@@ -99,6 +108,7 @@ internal class ProgressProcessor(
                 work.clearRetry(task); ProgressRuntime.changed()
             }
             work.stage("complete")
+            if (database == "ringcoach.db") RingMorningJob.schedule(context)
             false
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) {
@@ -106,14 +116,22 @@ internal class ProgressProcessor(
                 is QwenHttpException -> when (e.status) { 401, 403 -> "provider_access"; 429 -> "provider_quota"; in 500..599 -> "provider_temporary"; else -> "provider_request" }
                 is IOException -> "network"
                 is CoachingPayloadTooLarge -> "context_too_large"
+                is WorkoutValidationException -> "workout_${e.code}"
                 else -> "invalid_response"
             }
             val attempts = work.failure(task, code)
             val retry = attempts < 3 && code in setOf("network", "provider_quota", "provider_temporary")
             work.stage(if (retry) "retry_scheduled" else "blocked", date, error = code)
+            if (database == "ringcoach.db" && e !is WorkoutValidationException)
+                recordFailure(task.substringBefore(':').takeIf { it in setOf("nutrition", "workout", "coach") } ?: "setup",
+                    code, attempts, if (retry) "retry_scheduled" else "blocked")
             retry
         } finally { ProgressHealth.forget(database) }
     }
 
     private fun asset(name: String): String = context.assets.open(name).bufferedReader(Charsets.UTF_8).use { it.readText() }
+    private fun recordFailure(stage: String, code: String, attempt: Int, outcome: String) {
+        try { ProcessingFailureStore(context).use { it.record(stage, code, attempt, outcome) } }
+        catch (_: Exception) { /* Diagnostics must never block or replace the processing result. */ }
+    }
 }

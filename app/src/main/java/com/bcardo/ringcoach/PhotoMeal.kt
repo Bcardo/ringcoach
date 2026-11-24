@@ -117,7 +117,7 @@ internal object MealNutrition {
             }
         }
         return day.copy(status = "complete", reference = null,
-            result = NutritionExtraction(values, "partial_day", "", text?.unresolved ?: emptyList()),
+            result = NutritionExtraction(values, "partial_day", "", text?.unresolved ?: emptyList(), breakfast = text?.breakfast),
             photoMeals = meals, photoMode = mode)
     }
 }

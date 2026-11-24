@@ -55,6 +55,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     }
                 }
                 ProgressJob.schedule(getApplication())
+                RingMorningJob.schedule(getApplication())
             } catch (e: CancellationException) { throw e }
             catch (_: Exception) { notice = R.string.coach_prepare_failed }
             finally { capturingHealth = false }
@@ -89,6 +90,8 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         private set
     var card by mutableStateOf<SavedCoachCard?>(null)
         private set
+    var dailyCoaching by mutableStateOf<DailyCoaching?>(null)
+        private set
     var cardSaved by mutableStateOf(false)
         private set
     var nightlySnapshot by mutableStateOf<JSONObject?>(null)
@@ -107,7 +110,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         reload()
     }
 
-    fun reload() {
+    fun reload(date: LocalDate = LocalDate.now()) {
         loading = true
         loadFailed = false
         viewModelScope.launch {
@@ -124,6 +127,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                 val state = withContext(Dispatchers.IO) { ProgressWorkStore(store.readableDatabase).state() }
                 progressStage = state.optString("stage", "idle")
                 progressError = state.optString("error_code").takeUnless { it.isBlank() || it == "null" }
+                dailyCoaching = withContext(Dispatchers.IO) { store.dailyCoaching(date) }
             } catch (exception: CancellationException) {
                 throw exception
             } catch (_: Exception) {
@@ -233,7 +237,14 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
         ProgressJob.schedule(getApplication())
     }
 
-    fun retryProgress(probe: HealthConnectProbe?) { allowProgressRetry(); captureProgressHealth(probe) }
+    fun retryProgress(probe: HealthConnectProbe?, date: LocalDate = LocalDate.now()) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { store.retryDailyCoaching(date) }
+            dailyCoaching = withContext(Dispatchers.IO) { store.dailyCoaching(date) }
+            captureProgressHealth(probe, date)
+            ProgressJob.schedule(getApplication(), replaceExisting = true)
+        }
+    }
 
     fun allowProgressRetry() {
         viewModelScope.launch {
@@ -274,6 +285,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
                     json.put("nightly_recovery", SamsungNightlyReader.refresh(getApplication(), date)
                         .put("screen_reader_configured", SamsungHealthScreenReader.configured(getApplication()))
                         .put("screen_reader_connected", SamsungHealthScreenReader.enabled))
+                    RingBluetoothStore(getApplication()).use { json.put("ring_bluetooth", it.snapshot(date)) }
                     NightlyRecoveryStore(getApplication()).use { history ->
                         json.put("recovery_history", CoachingRecoveryHistory.compact(history.history(date.minusDays(30), date.minusDays(1)), date))
                     }
@@ -363,6 +375,7 @@ internal class CoachViewModel(application: Application) : AndroidViewModel(appli
             withContext(Dispatchers.IO) { store.saveCoachCard(result) }
             RecoveryReliability.coached(getApplication(), result.date, JSONObject(result.contextJson))
             cardSaved = true
+            dailyCoaching = withContext(Dispatchers.IO) { store.dailyCoaching(LocalDate.now()) }
             val completed = JSONObject(result.contextJson).optString("progress_submission_id")
             if (completed.isNotBlank()) refreshPending()
             notice = R.string.coach_card_saved

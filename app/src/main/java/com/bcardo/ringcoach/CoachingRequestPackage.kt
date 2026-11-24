@@ -85,6 +85,29 @@ internal object CoachingRequestPackager {
             omission("current_day_raw_journal_copy", current.size, "request_budget_trigger_and_complete_converted_food_workout_supplement_facts_preserved")
             request = serialize()
         }
+        if (manifest.getInt("serialized_request_bytes") > budget) {
+            // Retain every sample and exact timestamp/value, but write repeated field names once.
+            val series = telemetry?.optJSONObject("current_night")?.optJSONArray("heart_rate_series")
+            var encoded = 0
+            for (i in 0 until (series?.length() ?: 0)) {
+                val record = series!!.getJSONObject(i)
+                val samples = record.optJSONArray("samples") ?: continue
+                if (samples.length() == 0 || samples.optJSONObject(0) == null) continue
+                val keys = samples.getJSONObject(0).keys().asSequence().toSet()
+                if (keys !in listOf(setOf("time", "beats_per_minute"), setOf("time", "beats_per_minute", "session_refs"))) continue
+                if ((0 until samples.length()).any { samples.optJSONObject(it)?.keys()?.asSequence()?.toSet() != keys }) continue
+                val columns = listOf("time", "beats_per_minute", "session_refs").filter { it in keys }
+                record.put("samples", JSONArray((0 until samples.length()).map { index ->
+                    JSONArray(columns.map { field -> samples.getJSONObject(index).get(field) })
+                })).put("sample_columns", JSONArray(columns)).put("sample_encoding", "rows_in_sample_columns_order_lossless")
+                encoded += samples.length()
+            }
+            if (encoded > 0) {
+                manifest.put("lossless_hr_sample_encoding", JSONObject().put("sample_count", encoded)
+                    .put("encoding", "rows_in_sample_columns_order_lossless").put("samples_removed", 0))
+                request = serialize()
+            }
+        }
         manifest.put("budget_status", "fits")
         request = serialize()
         if (manifest.getInt("serialized_request_bytes") > budget) {
@@ -108,6 +131,12 @@ internal object CoachingRequestPackager {
         val sync = recovery?.optJSONArray("sync") ?: JSONArray()
         val checks = (0 until sync.length()).map { sync.getJSONObject(it) }
         val history = context.optJSONObject("recovery_history")
+        val ring = context.optJSONObject("ring_bluetooth")
+        val nutritionDays = context.optJSONArray("daily_nutrition") ?: JSONArray()
+        val breakfast = (0 until nutritionDays.length()).map { nutritionDays.getJSONObject(it) }
+            .firstOrNull { it.optString("date") == date }?.optJSONObject("standing_breakfast")
+        val ringSessions = ring?.optJSONArray("sessions") ?: JSONArray()
+        val ringToday = (0 until ringSessions.length()).map { ringSessions.getJSONObject(it) }.filter { it.optString("wake_date") == date }
         val sources = telemetry?.optJSONObject("metrics") ?: JSONObject()
         return JSONObject().put("version", "coaching-context-v1").put("request_date", date)
             .put("request_timezone", context.optString("request_timezone"))
@@ -123,6 +152,12 @@ internal object CoachingRequestPackager {
                     .put("sources", metric.optJSONArray("sources") ?: JSONArray()))
             } })
             .put("current_night", night?.optJSONObject("coverage") ?: JSONObject().put("status", "unavailable"))
+            .put("standing_breakfast", breakfast ?: JSONObject().put("mode", "not_enabled"))
+            .put("ring_bluetooth", JSONObject().put("source", ring?.optString("source") ?: "not_checked")
+                .put("target_date_session_count", ringToday.size)
+                .put("target_date_hrv_window_count", ringToday.sumOf { it.optJSONObject("metrics")?.optJSONObject("hrv_rmssd")?.optInt("sample_count") ?: 0 })
+                .put("validation", "experimental_same_night_reference_pending")
+                .put("raw_samples_sent", false))
             .put("hr_samples_retention", "transient_request_only_not_saved_or_replayed")
             .put("recovery_history_start", history?.opt("history_start") ?: JSONObject.NULL)
             .put("recovery_history_end", history?.opt("history_end") ?: JSONObject.NULL)

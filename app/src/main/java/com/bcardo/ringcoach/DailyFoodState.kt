@@ -80,6 +80,7 @@ internal object DailyFoodState {
     }
 
     fun validateFacts(job: PendingNutrition, result: NutritionExtraction) {
+        BreakfastResolution.validate(job, result)
         val turn = job.turn ?: return
         SupplementState.validate(job, result)
         val previous = turn.previous?.foodItems?.associateBy { it.id } ?: emptyMap()
@@ -104,6 +105,7 @@ internal object DailyFoodState {
 
     /** Calculate arithmetic only after all food/source/supplement links have passed validation. */
     fun calculated(job: PendingNutrition, result: NutritionExtraction): NutritionExtraction {
+        BreakfastResolution.validate(job, result)
         if (job.turn == null) return result
         validateFacts(job, result)
         val values = result.values.toMutableMap()

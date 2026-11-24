@@ -73,6 +73,7 @@ internal data class CoachingContext(
         .put("latest_workout_records", JSONArray(workoutRecords.map { it.toJson() }))
         .put("training_extraction_status", JSONArray(workoutStatuses))
         .put("daily_nutrition", JSONArray(nutritionDays.map { it.toJson() }))
+        .apply { StandingBreakfast.parse(settings.instructions)?.let { put("standing_breakfast_rule", it.toJson()) } }
         .put("supplement_history", JSONObject()
             .put("start_date", date.minusDays(6).toString()).put("end_date", date.toString())
             .put("days", JSONArray(nutritionDays.map { day -> JSONObject().put("date", day.date.toString())

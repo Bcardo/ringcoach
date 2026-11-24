@@ -71,6 +71,8 @@ class MainActivity : ComponentActivity() {
         coach.onForegroundChanged(true)
         RecoveryReliability.observe(this, "app_resumed")
         coach.reload()
+        RingBluetoothService.resume(this)
+        RingMorningJob.schedule(this)
         coach.captureProgressHealth(foregroundProbe)
         ProgressJob.schedule(this)
         ProgressRuntime.changed()

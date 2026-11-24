@@ -31,6 +31,7 @@ internal class IncrementalNutritionStore(private val db: SQLiteDatabase) {
     }
 
     fun seed(date: LocalDate, result: NutritionExtraction, diet: String, additional: String) {
+        require(result.totalsSource != "local_sum_with_standing_breakfast_v1") { "Standing meal projections are not confirmed food history" }
         val photos = PhotoMealStore(db)
         photos.list(date, date).filter { it.consumed && it.hasPhoto }.forEach {
             rememberPhoto(db, it.id, requireNotNull(photos.image(it.id)))

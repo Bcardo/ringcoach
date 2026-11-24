@@ -8,10 +8,56 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.withLock
 
 /** Explicit owner recovery: reuse one saved job; never append a second submission. */
 @RunWith(AndroidJUnit4::class)
 class PendingNutritionRecoveryTest {
+    @Test fun replayCapturedResponseWithoutChangingOwnerData() {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("replay_captured_progress") == "true")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val output = File(context.filesDir, "progress-recovery")
+        val request = JSONObject(File(output, "request-1.json").readText(Charsets.UTF_8))
+        val input = JSONObject(request.getJSONArray("messages").getJSONObject(1).getString("content"))
+        val source = input.getString("journal_input")
+        val next = input.getJSONObject("new_input")
+        val previous = NutritionExtractor.decode(input.getJSONObject("previous_daily_state").toString(), source)
+        val photos = next.getJSONArray("photo_ids")
+        val job = PendingNutrition(java.time.LocalDate.parse(input.getString("date")), next.getString("submission_id"),
+            "", source, true, NutritionTurn(next.getString("submission_id"), next.getString("text"),
+                (0 until photos.length()).map { photos.getString(it) }, 1, null, previous, "pending"))
+        val response = File(output, "response-2.json").readText(Charsets.UTF_8)
+        val result = DailyFoodState.calculated(job, NutritionExtractor.decodeForJob(QwenClient.responseText(response), job))
+        assertEquals(previous.foodItems.size + 2, result.foodItems.size)
+        assertEquals(2, result.supplements.size)
+        previous.foodItems.forEach { old -> assertEquals(old, result.foodItems.single { it.id == old.id }) }
+    }
+
+    @Test fun resumeSavedQueueAfterValidationFix() = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("recover_saved_progress") == "true")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        ProgressRuntime.mutex.withLock {
+            val count = JournalStore(context).use { store ->
+                val count = store.readableDatabase.rawQuery("SELECT count(*) FROM progress_submissions", null).use {
+                    it.moveToFirst(); it.getInt(0)
+                }
+                store.retryFailedNutrition(); store.retryFailedWorkouts()
+                ProgressWorkStore(store.writableDatabase).clearRetries()
+                count
+            }
+            assertFalse("Recovery needs a transient network retry", ProgressProcessor(context).run())
+            JournalStore(context).use { store ->
+                assertNull("Nutrition still pending", store.nextPendingNutrition())
+                assertNull("Workout still pending", store.nextPendingWorkout())
+                assertNull("Coaching still pending", store.nextPendingCoaching())
+                store.readableDatabase.rawQuery("SELECT count(*) FROM progress_submissions", null).use {
+                    assertTrue(it.moveToFirst()); assertEquals(count, it.getInt(0))
+                }
+            }
+        }
+    }
+
     @Test fun inspectOrRecoverExistingFailedTurn() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val args = InstrumentationRegistry.getArguments()

@@ -1,0 +1,13 @@
+# Daily coaching views
+
+Today shows the latest coach assessment and dietary advice for the current local date, plus current intake. Training shows the saved exercise plan with latest recorded performance, followed by that date's coach training response. Exercise rows retain their latest performance date or clearly labeled imported reference baseline. A newer response written for a historical date never replaces today's response. If no response exists for today, the screen says so; previous days remain in History.
+
+Health/Bluetooth subscription, coverage and permission details belong in Settings → account and health connections. Intake assumptions, extraction clarification backlogs and raw saved routine instructions are not shown as today's coach response. Saved routines and default-breakfast settings remain inputs to coaching and are editable in Settings.
+
+Daily feedback is selected in a single SQLite read statement so the UI does not take an unnecessary write lock while background processing runs. An unfinished update is associated with its date and pending submission; a saved response for that submission completes it even if the persisted work status has not yet changed. A genuine incomplete update has one short explanation and a retry action. Retry resets only the selected date's failed extraction states and retry counters; it does not create submissions, delete questions or mark incomplete work successful.
+
+The coach prompt prioritizes practical advice and the current question. It checks dates, sources and uncertainty internally, and mentions limitations only when they affect the recommendation. Technical field names and collection mechanisms do not belong in the response.
+
+The existing model-request byte limit remains enforced. If optional duplicate text has already been removed and the request is still too large, homogeneous current-night heart-rate sample objects can be encoded as rows with explicit `sample_columns`. Every exact timestamp, value and session reference remains present, with no downsampling. Unknown sample fields prevent this transformation. The manifest records the lossless encoding. Sample rows remain transient and are removed by the same archive boundary as ordinary sample objects. A request that still exceeds the limit fails explicitly.
+
+Validation: `:app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebugAndroidTest`; run `DailyCoachingStoreTest` and `BackgroundProgressTest` through `scripts/run_android_checks.ps1`. Owner-only `DailyCoachingOwnerReviewTest` requires explicit opt-in for a real pending-update retry or private screen review. Never force-stop the main package, suppress the accessibility reader, or publish private screen captures.
