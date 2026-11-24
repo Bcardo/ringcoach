@@ -78,6 +78,7 @@ internal data class NutritionDay(
 }
 
 internal object NutritionExtractor {
+    const val VERSION = "nutrition-v2-portion-corrections"
     fun extract(job: PendingNutrition, instructions: String, photos: List<Pair<String, ByteArray>>, key: String,
         post: (JSONObject, String) -> String = QwenClient::post): NutritionExtraction {
         val request = request(job, instructions, photos)
@@ -88,7 +89,7 @@ internal object NutritionExtractor {
             request.getJSONArray("messages")
                 .put(JSONObject().put("role", "assistant").put("content", answer))
                 .put(JSONObject().put("role", "user").put("content",
-                    "上次结果未通过校验（${invalid.message ?: "结构或来源不符"}）。请重新输出完整JSON：evidence每行逐字引用原文；reported数值必须出现在evidence中。图片标签里的数字若未在用户文字中出现，必须用estimated并引用[照片 ID]，不能编造文字引用；计算合计也用estimated。旧food_items未被本次明确修正时必须逐字段原样复制。改变或移除的旧ID必须准确列入revised_food_ids；新ID用本次submission_id加冒号和编号，新source_submission_ids只含本次ID。修正项保留旧来源并追加本次ID。每日营养合计必须等于当前食品项之和。缺失用null，不用0。补剂同样保留未修改旧事件的所有字段与原始evidence，重复确认不改写旧事件。改动的补剂必须用本次new_input逐字引用名称及本次改动字段的证据。未改动的已知剂量/单位/时间保留旧值与来源，不强制在新证据中重述；新增字段的未知信息为null。准确列出revised_supplement_ids。"))
+                    "上次结果未通过校验（${invalid.message ?: "结构或来源不符"}）。份量重量被明确更正时，必须重新估算对应食品的营养，不能仅修改portion或assumptions却逐项沿用旧营养值；portion_not_recalculated表示此错误。不要机械缩放与份量无关的食品。请重新输出完整JSON：evidence每行逐字引用原文；reported数值必须出现在evidence中。图片标签里的数字若未在用户文字中出现，必须用estimated并引用[照片 ID]，不能编造文字引用；计算合计也用estimated。旧food_items未被本次明确修正时必须逐字段原样复制。改变或移除的旧ID必须准确列入revised_food_ids；新ID用本次submission_id加冒号和编号，新source_submission_ids只含本次ID。修正项保留旧来源并追加本次ID。每日营养合计必须等于当前食品项之和。缺失用null，不用0。补剂同样保留未修改旧事件的所有字段与原始evidence，重复确认不改写旧事件。改动的补剂必须用本次new_input逐字引用名称及本次改动字段的证据。未改动的已知剂量/单位/时间保留旧值与来源，不强制在新证据中重述；新增字段的未知信息为null。准确列出revised_supplement_ids。"))
             return DailyFoodState.calculated(job, decodeForJob(QwenClient.responseText(post(request, key)), job))
         }
     }

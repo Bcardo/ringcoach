@@ -28,6 +28,38 @@ class DailyFoodStateTest {
         DailyFoodState.validate(job(result(listOf(old))), result(listOf(corrected), listOf(old.id)))
     }
 
+    @Test fun changedMassCannotKeepAllOldNutrientsButReestimateCanPass() {
+        val old = food("old:1").copy(portion = "350 g")
+        val changed = old.copy(portion = "700 g", submissionIds = listOf("old", "next"))
+        try {
+            DailyFoodState.validate(job(result(listOf(old))), result(listOf(changed), listOf(old.id)))
+            fail("A changed mass with stale nutrients was accepted")
+        } catch (e: NutritionValidationException) { assertEquals("portion_not_recalculated", e.code) }
+        val recalculated = changed.copy(estimate = changed.estimate.copy(values = changed.estimate.values.mapValues { it.value?.times(2) }))
+        DailyFoodState.validate(job(result(listOf(old))), result(listOf(recalculated), listOf(old.id)))
+        val equivalentUnits = old.copy(portion = "0.35 kg", submissionIds = listOf("old", "next"))
+        DailyFoodState.validate(job(result(listOf(old))), result(listOf(equivalentUnits), listOf(old.id)))
+    }
+
+    @Test fun staleMassCorrectionGetsOneRepairAndPreservesOtherFoods() {
+        val old = food("old:1").copy(portion = "350g")
+        val other = food("old:2")
+        val next = job(result(listOf(old, other)))
+        val stale = old.copy(portion = "700g", submissionIds = listOf("old", "next"))
+        val corrected = stale.copy(estimate = stale.estimate.copy(values = stale.estimate.values.mapValues { it.value?.times(2) }))
+        var calls = 0
+        val parsed = NutritionExtractor.extract(next, "Extract", emptyList(), "synthetic-key") { _, _ ->
+            calls++
+            val answer = result(listOf(if (calls == 1) stale else corrected, other), listOf(old.id))
+            JSONObject().put("choices", org.json.JSONArray().put(JSONObject().put("finish_reason", "stop")
+                .put("message", JSONObject().put("content", answer.toJson().toString())))).toString()
+        }
+        assertEquals(2, calls)
+        assertEquals(corrected, parsed.foodItems.first())
+        assertEquals(other, parsed.foodItems.last())
+        assertEquals(60.0, parsed.values.getValue("carbohydrate_grams").value!!, 0.0)
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsUnrequestedDriftInOldFood() {
         DailyFoodState.validate(job(result(listOf(food("old:1")))), result(listOf(food("old:1", 180.0))))

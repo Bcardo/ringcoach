@@ -80,6 +80,11 @@ class DailyDecisionNavigationTest {
         assertFalse("Removed primary tab is still present", nodes().any { it.text?.toString() == "历史" })
         repeat(12) { if (scroll(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)) Thread.sleep(100) }
         await("今日重点")
+        assertFalse("Daily advice still has a collapse control", nodes().any {
+            it.text?.toString() in setOf("查看完整建议", "收起完整建议")
+        })
+        reveal("依据与提醒")
+        reveal("训练建议")
         reveal("查看训练计划与进度")
         click("查看训练计划与进度")
         await("今日训练建议")
@@ -88,8 +93,18 @@ class DailyDecisionNavigationTest {
         click("收起过往表现")
         click("今日")
         reveal("昨夜记录")
+        val expectedCarbs = JournalStore(context).use { store ->
+            store.readCoachingContext(java.time.LocalDate.now(), "").nutritionDays
+                .firstOrNull { it.date == java.time.LocalDate.now() }?.result?.values?.get("carbohydrate_grams")
+        }
+        val carbLabel = "碳水：" + (if (expectedCarbs?.kind == "estimated") "≈" else "") + nutritionNumber(expectedCarbs?.value) + " g"
+        reveal(carbLabel)
+        assertNotNull("Intake display does not match the saved calculation", find(carbLabel))
         click("日志")
         await("提交更新")
+        reveal("查看今日建议"); click("查看今日建议")
+        await("今日重点")
+        click("日志"); await("提交更新")
         lateinit var journal: JournalViewModel
         lateinit var photos: PhotoMealViewModel
         instrumentation.runOnMainSync {

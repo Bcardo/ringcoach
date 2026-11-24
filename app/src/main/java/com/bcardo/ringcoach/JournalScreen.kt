@@ -86,8 +86,8 @@ internal fun JournalApp(
                         Text(today.toString())
                         val feedback = coach.dailyCoaching?.takeIf { it.date == today }
                         val card = feedback?.card
-                        DailyDecisionPanel(today, feedback) { tab = "training" }
                         ProgressStatus(coach, today) { coach.retryProgress(probe) }
+                        DailyDecisionPanel(today, feedback) { tab = "training" }
                         DailyNightPanel(today, coach.foreground)
                         TextButton(onClick = { tab = "recovery" }) { Text("查看恢复趋势") }
                         DailyIntakeCard(nutrition.days.firstOrNull { it.date == today }, nutrition.syncing,
@@ -112,11 +112,15 @@ internal fun JournalApp(
                         ProgressComposer(journal, photos, enabled, today, journalDateInput, { journalDateInput = it }) {
                             photos.submitProgress(journal.submissionId, journal.draft, { entry ->
                                 journal.acceptSaved(entry); coach.queueProgress(); coach.refreshNightly(); coach.captureProgressHealth(probe, entry.draft.date)
+                                if (entry.draft.date == today) tab = "home"
                             }) {
                                 workouts.sync(today); nutrition.sync(today)
                             }
                         }
                         ProgressStatus(coach, today) { coach.retryProgress(probe) }
+                        if (coach.dailyCoaching?.takeIf { it.date == today }?.card != null) {
+                            OutlinedButton(onClick = { tab = "home" }) { Text("查看今日建议") }
+                        }
                     }
                     "journal_archive" -> {
                         TextButton(onClick = { coachHistory.closeDetail(); tab = "journal" }) { Text("返回日志") }
@@ -232,9 +236,17 @@ private fun ProgressHistory(journal: JournalViewModel, nutrition: NutritionViewM
 
 @Composable
 private fun ProgressStatus(coach: CoachViewModel, date: LocalDate, onRetry: () -> Unit) {
+    if (coach.loadFailed) {
+        Text("暂时无法读取更新状态，请重试；已保存的记录不受影响。", style = MaterialTheme.typography.bodySmall)
+        OutlinedButton(onClick = { coach.reload(date) }) { Text("刷新更新状态") }
+        return
+    }
     val feedback = coach.dailyCoaching?.takeIf { it.date == date } ?: return
+    Text(progressStatusText(feedback), style = MaterialTheme.typography.bodySmall)
     if (feedback.pending == null) return
     if (feedback.needsRetry) {
+        if (feedback.error == "nutrition_portion_not_recalculated")
+            Text("份量更正尚未得到有效的营养重算；此前估算还不能作为更正后的结果。", style = MaterialTheme.typography.bodySmall)
         if (feedback.error == "context_too_large")
             Text("本次进度已保存；教练所需信息过多，建议尚未生成。重试不会重复记录已完成的摄入或训练。", style = MaterialTheme.typography.bodySmall)
         Text(if (feedback.card == null) "这次更新未完成，还没有生成当天建议。"
@@ -242,5 +254,5 @@ private fun ProgressStatus(coach: CoachViewModel, date: LocalDate, onRetry: () -
         if (!coach.hasKey || feedback.error in setOf("credential_missing", "provider_access"))
             Text("请在设置中检查模型账号。", style = MaterialTheme.typography.bodySmall)
         OutlinedButton(enabled = coach.hasKey && !coach.busy, onClick = onRetry) { Text("重试本次更新") }
-    } else if (feedback.updating) Text("正在更新教练建议…", style = MaterialTheme.typography.bodySmall)
+    }
 }

@@ -53,6 +53,15 @@ internal data class NutritionTurn(
     val photoMatches: Map<String, List<String>> = emptyMap(),
 )
 
+internal class NutritionValidationException(val code: String) : IllegalArgumentException(code)
+
+internal fun portionMassGrams(portion: String): Double? {
+    val masses = Regex("(?i)([0-9]+(?:\\.[0-9]+)?)\\s*(kg|千克|公斤|g|克)(?![a-z])").findAll(portion).toList()
+    if (masses.size != 1) return null
+    val mass = masses.single()
+    return mass.groupValues[1].toDouble() * if (mass.groupValues[2].lowercase() in setOf("kg", "千克", "公斤")) 1000 else 1
+}
+
 internal object DailyFoodState {
     fun evidenceContext(state: NutritionExtraction?): String = state?.let {
         (it.values.values.map { value -> value.evidence } + it.scopeEvidence + it.foodItems.map { food ->
@@ -99,6 +108,14 @@ internal object DailyFoodState {
                 require(turn.input.isNotBlank() || turn.photoIds.isNotEmpty())
                 require(food.submissionIds.containsAll(old.submissionIds) && turn.id in food.submissionIds)
                 require(food.submissionIds.all { it in old.submissionIds || it == turn.id })
+                // A clear changed mass must not merely relabel an old estimate. Let the bounded
+                // repair re-estimate it; do not invent a density or silently scale a mixed meal.
+                val oldMass = portionMassGrams(old.portion)
+                val newMass = portionMassGrams(food.portion)
+                if (oldMass != null && newMass != null && oldMass > 0 && newMass > 0 &&
+                    abs(oldMass - newMass) > 1 && old.estimate.values == food.estimate.values &&
+                    MEAL_FIELDS.any { old.estimate.values[it]?.let { value -> value > 0 } == true })
+                    throw NutritionValidationException("portion_not_recalculated")
             }
         }
     }

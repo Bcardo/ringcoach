@@ -38,7 +38,7 @@ internal data class WorkoutDelta(val changes: List<WorkoutChange>, val unresolve
 
 /** Only new input is recognized. Previously accepted facts are referenced by ID, never regenerated. */
 internal object WorkoutDeltaExtractor {
-    const val VERSION = "workout-v3-incremental-delta"
+    const val VERSION = "workout-v4-numbered-reports"
     fun request(turn: PendingWorkoutTurn, baselines: List<ExerciseBaseline>, instructions: String, feedback: JSONObject? = null): JSONObject {
         val properties = JSONObject()
         for (key in listOf("operation", "exercise", "performance", "evidence", "status"))

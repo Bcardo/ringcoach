@@ -1,5 +1,7 @@
 # Daily decision panel: first #59 delivery
 
+Current presentation update: [#77](https://github.com/Bcardo/ringcoach/issues/77) removes the full-advice collapse control and compact duplicate excerpts. All notes and training advice are displayed directly. Submission status sits above the panel and identifies pending stages, automatic retries and saved-advice completion; current-date local saves open Today. See [portion corrections and submission status](portion-corrections.md). The first-delivery layout below remains historical implementation context.
+
 Installed first milestone on 2026-11-20; broader ordinary-use acceptance remains open. Parent roadmap: #58. This adapts Oura's contextual Today pattern into the existing four-tab app. The panel APK replaces the original #65 build with identical coaching requests/prompt/policy; record the UI version boundary when reviewing normal-use evidence.
 
 Subsequent approved navigation delivery: [three tabs and contextual history](contextual-history.md) is now installed. Its current layout supersedes the first milestone's four-tab placement while preserving these cards and the same coaching policy.

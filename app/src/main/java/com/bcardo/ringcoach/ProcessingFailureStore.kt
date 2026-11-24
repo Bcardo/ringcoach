@@ -18,7 +18,11 @@ internal class ProcessingFailureStore(context: Context, name: String = "processi
         val db = writableDatabase
         db.execSQL("INSERT INTO events(at,stage,code,attempt,outcome,model,prompt) VALUES (?,?,?,?,?,?,?)",
             arrayOf<Any>(System.currentTimeMillis(), stage, code, attempt, outcome, QWEN_MODEL,
-                prompt ?: if (stage == "workout") WORKOUT_EXTRACTOR_VERSION else COACH_PROMPT_VERSION))
+                prompt ?: when (stage) {
+                    "workout" -> WORKOUT_EXTRACTOR_VERSION
+                    "nutrition" -> NutritionExtractor.VERSION
+                    else -> COACH_PROMPT_VERSION
+                }))
         db.execSQL("DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY id DESC LIMIT 100)")
     }
 }
