@@ -6,7 +6,7 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 internal const val QWEN_MODEL = "qwen3.8-flash"
-internal const val COACH_PROMPT_VERSION = "coach-v16-lossless-context"
+internal const val COACH_PROMPT_VERSION = "coach-v17-training-feedback"
 
 internal data class CoachAdvice(val training: List<String>, val diet: List<String>, val notes: List<String>) {
     fun toJson(): JSONObject = JSONObject()
