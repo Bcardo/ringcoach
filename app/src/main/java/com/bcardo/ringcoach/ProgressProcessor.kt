@@ -133,6 +133,7 @@ internal class ProgressProcessor(
                 is IOException -> "network"
                 is CoachingPayloadTooLarge -> "context_too_large"
                 is WorkoutValidationException -> "workout_${e.code}"
+                is NutritionValidationException -> "nutrition_${e.code}"
                 else -> "invalid_response"
             }
             val attempts = work.failure(task, code)

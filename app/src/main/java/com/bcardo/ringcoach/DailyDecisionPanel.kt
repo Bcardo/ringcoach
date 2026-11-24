@@ -14,7 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +28,6 @@ import java.util.Locale
 @Composable
 internal fun DailyDecisionPanel(date: LocalDate, feedback: DailyCoaching?, onTraining: () -> Unit) {
     val decision = dailyDecision(date, feedback)
-    var expanded by rememberSaveable(date.toString()) { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("今日重点", style = MaterialTheme.typography.titleLarge)
@@ -40,20 +38,10 @@ internal fun DailyDecisionPanel(date: LocalDate, feedback: DailyCoaching?, onTra
                 val updated = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault()).format(card.createdAt)
                 Text("教练建议 · 更新于 $updated", style = MaterialTheme.typography.labelMedium)
                 if (decision.awaitingLatest) Text("以下是上次建议，尚未包含这次更新。", style = MaterialTheme.typography.bodySmall)
-                decision.focus?.let { Text(it, style = MaterialTheme.typography.titleMedium, maxLines = 3, overflow = TextOverflow.Ellipsis) }
-                for (reason in decision.reasons) Text("• $reason", maxLines = 2, overflow = TextOverflow.Ellipsis)
-                decision.action?.let {
-                    Text("下一步", style = MaterialTheme.typography.labelLarge)
-                    Text(it, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                }
-                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起完整建议" else "查看完整建议") }
-                if (expanded) {
-                    HorizontalDivider()
-                    Text("依据与提醒", style = MaterialTheme.typography.titleMedium)
-                    card.advice.notes.forEach { Text("• $it") }
-                    Text("训练建议", style = MaterialTheme.typography.titleMedium)
-                    card.advice.training.forEach { Text("• $it") }
-                }
+                Text("依据与提醒", style = MaterialTheme.typography.titleMedium)
+                card.advice.notes.forEach { Text("• $it") }
+                Text("训练建议", style = MaterialTheme.typography.titleMedium)
+                card.advice.training.forEach { Text("• $it") }
             }
             OutlinedButton(onClick = onTraining, modifier = Modifier.fillMaxWidth()) { Text("查看训练计划与进度") }
         }

@@ -81,6 +81,34 @@ class BackgroundProgressTest {
         JournalStore(context, name).use { assertEquals("one", it.latestCoachCard()!!.id) }
     } }
 
+    @Test fun twoIntakeNetworkFailuresShowRetryThenSavedAdviceWithoutResubmission() = isolated { name -> runBlocking {
+        seed(name)
+        repeat(2) {
+            assertTrue(processor(name) { _, _ -> throw IOException("synthetic offline") }.run())
+            JournalStore(context, name).use { store ->
+                val feedback = store.dailyCoaching(date)
+                assertEquals("retry_scheduled", feedback.stage)
+                assertEquals("network", feedback.error)
+                assertTrue(feedback.updating)
+                assertTrue(progressStatusText(feedback).contains("自动重试"))
+                assertFalse(progressStatusText(feedback).contains("最新建议已保存"))
+                assertNull(feedback.card)
+            }
+        }
+        val calls = mutableListOf<JSONObject>()
+        assertFalse(processor(name) { request, _ -> calls.add(request); reply(request) }.run())
+        assertEquals(3, calls.size)
+        JournalStore(context, name).use { store ->
+            val feedback = store.dailyCoaching(date)
+            assertNull(feedback.pending)
+            assertEquals("one", feedback.card!!.id)
+            assertTrue(progressStatusText(feedback).contains("最新建议已保存"))
+            store.readableDatabase.rawQuery("SELECT count(*) FROM progress_submissions", null).use {
+                assertTrue(it.moveToFirst()); assertEquals(1, it.getInt(0))
+            }
+        }
+    } }
+
     @Test fun healthWaitResumesWithoutRepeatingRecognition() = isolated { name -> runBlocking {
         seed(name, false)
         var calls = 0

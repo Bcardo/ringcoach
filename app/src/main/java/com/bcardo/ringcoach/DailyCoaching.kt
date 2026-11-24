@@ -15,6 +15,22 @@ internal data class DailyCoaching(
         "recognizing_intake", "recognizing_workout", "coaching", "retry_scheduled", "waiting_health")
 }
 
+internal fun progressStatusText(feedback: DailyCoaching): String = when {
+    feedback.pending == null && feedback.card != null -> "最新建议已保存 · 更新于 ${coachCardTimestamp(feedback.card.createdAt)}"
+    feedback.pending == null -> "当天还没有教练建议。"
+    feedback.stage == "blocked" -> "进度已保存，本次建议尚未完成。"
+    feedback.stage == "retry_scheduled" -> when (feedback.error) {
+        "network" -> "进度已保存；模型连接暂时失败，正在等待自动重试，无需重复提交。"
+        "provider_quota" -> "进度已保存；模型服务暂时限流，正在等待自动重试，无需重复提交。"
+        else -> "进度已保存；模型服务暂时不可用，正在等待自动重试，无需重复提交。"
+    }
+    feedback.stage == "recognizing_intake" -> "进度已保存 · 正在识别饮食…可离开此页，完成后会自动更新。"
+    feedback.stage == "recognizing_workout" -> "进度已保存 · 正在识别训练…可离开此页，完成后会自动更新。"
+    feedback.stage == "waiting_health" -> "进度已保存 · 正在等待健康数据读取，可回到应用继续处理。"
+    feedback.stage == "coaching" -> "进度已保存 · 正在生成教练建议…可离开此页，完成后会自动更新。"
+    else -> "进度已保存 · 等待后台处理，无需重复提交。"
+}
+
 internal fun JournalStore.dailyCoaching(date: LocalDate): DailyCoaching {
     // One read snapshot; BEGIN IMMEDIATE would unnecessarily contend with background writers.
     return readableDatabase.rawQuery("""SELECT c.id,c.date,c.created_at,c.model,c.prompt_version,
