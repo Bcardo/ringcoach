@@ -18,6 +18,12 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    buildTypes.getByName("debug") {
+        val panelPreview = providers.gradleProperty("panelPreview").orNull == "true"
+        if (panelPreview) applicationIdSuffix = ".panelpreview"
+        manifestPlaceholders["panelPreviewEnabled"] = panelPreview.toString()
+    }
+
     buildFeatures {
         compose = true
     }
