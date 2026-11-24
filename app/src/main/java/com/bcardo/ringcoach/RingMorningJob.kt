@@ -53,7 +53,7 @@ internal class RingMorningProcessor(
                         CoachingRecoveryHistory.compact(history.history(date.minusDays(30), date.minusDays(1)), date)) }
                 }
                 journal.latestCoachCard(date)?.let { data.put("previous_advice", it.advice.toJson()) }
-                val packaged = CoachingRequestPackager.prepare(data, asset("coach-system.txt"))
+                val packaged = CoachingRequestPackager.prepare(data, asset("coach-system.txt"), onSize = { size -> if (journalDatabase == "ringcoach.db") CoachingRequestSizeStore.record(context, size) })
                 currentCoroutineContext().ensureActive()
                 ring.morningStatus(date, "coaching")
                 val advice = QwenClient.response(post(packaged.request, key))

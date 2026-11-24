@@ -123,7 +123,7 @@ class DetailedCoachingContextTest {
             .put("session_refs", JSONArray(listOf("first", "overlapping"))) })
         series.put("samples", samples).put("sample_count", samples.length()).remove("session_refs")
         val generous = CoachingRequestPackager.prepare(input, "Coach", 1_000_000)
-        val budget = generous.request.toString().toByteArray(Charsets.UTF_8).size - 40_000
+        val budget = generous.size.unpackedBytes - 40_000
         val packed = CoachingRequestPackager.prepare(input, "Coach", budget)
         assertTrue(packed.request.toString().toByteArray(Charsets.UTF_8).size <= budget)
         val sent = JSONObject(packed.request.getJSONArray("messages").getJSONObject(1).getString("content"))

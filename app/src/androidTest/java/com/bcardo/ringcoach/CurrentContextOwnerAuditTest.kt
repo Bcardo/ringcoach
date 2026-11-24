@@ -19,7 +19,7 @@ class CurrentContextOwnerAuditTest {
         assumeTrue(InstrumentationRegistry.getArguments().getString("audit_context") == "true")
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
-        val date = LocalDate.now()
+        val date = InstrumentationRegistry.getArguments().getString("audit_date")?.let(LocalDate::parse) ?: LocalDate.now()
         val prompt = context.assets.open("coach-system.txt").bufferedReader().use { it.readText() }
         val policy = context.assets.open("coaching-policy.md").bufferedReader().use { it.readText() }
         JournalStore(context).use { journal ->
@@ -38,7 +38,7 @@ class CurrentContextOwnerAuditTest {
             }
             RingBluetoothStore(context).use { facts.put("ring_bluetooth", it.snapshot(date)) }
             val packaged = try { CoachingRequestPackager.prepare(facts, prompt) } catch (e: CoachingPayloadTooLarge) {
-                instrumentation.sendStatus(0, android.os.Bundle().apply { putString("stream", "CONTEXT_OWNER_BUDGET ${e.manifest}\n") })
+                instrumentation.sendStatus(0, android.os.Bundle().apply { putString("stream", "CONTEXT_OWNER_BUDGET ${e.size.toJson()}\n") })
                 throw e
             }
             val manifest = packaged.retainedContext.getJSONObject("request_manifest")
@@ -48,7 +48,8 @@ class CurrentContextOwnerAuditTest {
                 .put("recovery_comparison_calendar_days", manifest.getInt("recovery_history_days"))
                 .put("recovery_series_coverage", manifest.getJSONArray("recovery_series_coverage"))
                 .put("freshness", manifest.getJSONObject("freshness"))
-            assertEquals(cardsBefore, journal.coachCardSummaries(limit = 100).map { it.id })
+                .put("size", packaged.size.toJson())
+            assertTrue("Owner audit must not create cards", cardsBefore == journal.coachCardSummaries(limit = 100).map { it.id })
             val night = packaged.retainedContext.getJSONObject("telemetry").getJSONObject("current_night")
             val series = night.getJSONArray("heart_rate_series")
             for (i in 0 until series.length()) assertFalse(series.getJSONObject(i).has("samples"))
